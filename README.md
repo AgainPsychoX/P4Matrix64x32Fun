@@ -39,10 +39,9 @@
 
 ### To-do
 
-+ Fix NTP delay
-	+ Looks like we need to recompile esp8266 framework, because prebuilt one by PlatformIO is hardcoded with delay...
-	+ https://community.platformio.org/t/how-to-recompile-platform-libraries/1772/2
 * Working display
+* Simplest WiFi connectivity
+* NTP client -> time synchronization
 * Digital clock
 * Analog clock
 * HTTP server

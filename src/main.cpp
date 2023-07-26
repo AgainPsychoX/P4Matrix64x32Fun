@@ -2,11 +2,9 @@
 #define PxMATRIX_double_buffer true
 #include <PxMatrix.h>
 #include <Fonts/FreeMonoBold12pt7b.h>
-#include <Fonts/FreeSansBold12pt7b.h>
-#include <Fonts/FreeSerifBold12pt7b.h>
 #include <Ticker.h>
 #include <ESP8266WiFi.h>
-#include <coredecls.h>
+#include <NTPClient.hpp>
 #include <sntp.h>
 #include <ctime>
 
@@ -42,11 +40,28 @@
 #define P_OE 2
 #define MATRIX_WIDTH 64
 #define MATRIX_HEIGHT 32
-#define DISPLAY_INTERVAL 5
+#define DISPLAY_INTERVAL 6
 #define DISPLAY_SHOW_TIME 30
 
 Ticker displayTicker;
 PxMATRIX display(MATRIX_WIDTH, MATRIX_HEIGHT, P_LAT, P_OE, P_A, P_B, P_C, P_D);
+
+/// Local UDP socket for NTP client.
+WiFiUDP ntpUDP;
+/// NTP client to update time. The struct is used to store time even when NTP is not available.
+NTPClient ntp(ntpUDP, "pl.pool.ntp.org");
+
+void ntpUpdate() {
+	if (ntp.update(1000)) {
+		const DateTime now = DateTime::fromUnixMillis(ntp.unixMillis());
+		// TODO: settimeofday ?
+		LOG_DEBUG(Time, "Time updated from NTP: %u-%02u-%02u %02u:%02u:%02u",
+			now.year, now.month, now.day, now.hour, now.minute, now.second);
+	}
+	else {
+		LOG_WARN(Time, "Failed to update time from NTP");
+	}
+}
 
 inline IPAddress stringIPAddress(const char* str) {
 	IPAddress a;
@@ -121,19 +136,17 @@ void setup() {
 	Serial.print("IP: ");
 	Serial.println(WiFi.localIP());
 
-	// Setup time (SNTP & timezone)
-	Serial.println("SNTP_STARTUP_DELAY=" STRINGIFY(SNTP_STARTUP_DELAY));
-	settimeofday_cb([](bool fromSNTP) {
-		if (CHECK_LOG_LEVEL(Time, LEVEL_DEBUG)) {	
-			char buffer[24];
-			std::time_t time = std::time({});
-			std::strftime(std::data(buffer), std::size(buffer), "%Y-%m-%dT%H:%M:%S", std::gmtime(&time));
-			LOG_INFO(Time, "Updated%s: %s", fromSNTP ? " from SNTP" : "", buffer);
-		}
-	});
-	sntp_setoperatingmode(SNTP_OPMODE_POLL);
-	sntp_setservername(0, "pl.pool.ntp.org");
-	sntp_init();
+	delay(1000);
+
+	// Initialize NTP
+	LOG_TRACE(Time, "Opening local UDP socket for NTP");
+	ntpUDP.begin(10123);
+	ntpUpdate();
+
+	// sntp_setoperatingmode(SNTP_OPMODE_POLL);
+	// sntp_setservername(0, "pl.pool.ntp.org");
+	// sntp_init();
+
 	// TODO: allow changing NTP server & timezone
 	setenv("TZ", "CET-1CEST,M3.5.0,M10.5.0/3", 1); // Hardcoded for Europe/Warsaw
 	tzset();
@@ -149,47 +162,51 @@ void setup() {
 void loop() {
 	unsigned long currentMillis = millis();
 
+	// UPDATE_EVERY(60 * 60 * 1000) {
+	// 	ntpUpdate();
+	// }
+
+	UPDATE_EVERY(10 * 1000) {
+		ntpUpdate();
+	}
+
+	// const auto unixSeconds = ntp.unixSeconds();
+
+	// return;
+
 	char buffer[16];
 	std::time_t time = std::time({});
 	std::strftime(std::data(buffer), std::size(buffer), "%T", std::gmtime(&time));
 
 	// Serial.println(buffer);
 
-	buffer[2] = 0;
-	buffer[5] = 0;
+	// buffer[2] = 0;
+	// buffer[5] = 0;
 
-	// For testing fonts...
-	static int which = 0;
-	UPDATE_EVERY(2000) {
-		which = (which + 1) % 3;
-		Serial.println(which);
-	}
-	switch (which) {
-		case 0: display.setFont(&FreeMonoBold12pt7b); break;
-		case 1: display.setFont(&FreeSansBold12pt7b); break;
-		case 2: display.setFont(&FreeSerifBold12pt7b); break;
-	}
+	// display.setFont(&FreeMonoBold12pt7b);
+	// display.setTextColor(display.color565(255, 255, 255));
+	// display.fillRect(0, 8, 64, 24, display.color565(0, 0, 0));
 
-	display.setTextColor(display.color565(255, 255, 255));
-	display.fillRect(0, 0, 64, 24, display.color565(0, 0, 0));
+	// display.setCursor(0, 8); 
+	// display.print(buffer + 3);
 
-	display.setCursor(0, 0 + 15); 
-	display.print(buffer + 0); // hours
+	// if (currentMillis % 2000 > 1000) {
+	// 	display.setCursor(23, 8); 
+	// 	display.print(':');
+	// }
 
-	if (currentMillis % 2000 > 1000) {
-		display.setCursor(24, 0 + 15); 
-		display.print(':');
-	}
+	// display.setCursor(26, 8); 
+	// display.print(buffer + 6);
 
-	display.setCursor(32, 0 + 15); 
-	display.print(buffer + 3); // minutes
-	// display.print(buffer + 6); // seconds
+	// sprintf(buffer, "%lu", currentMillis);
+	// display.fillRect(0, 0, 64, 8, display.color565(0, 0, 0));
+	// display.setCursor(0, 0);
+	// display.setFont(nullptr);
+	// display.print(buffer);
 
-	sprintf(buffer, "%lu", currentMillis);
-	display.fillRect(0, 24, 64, 8, display.color565(0, 0, 0));
-	display.setCursor(0, 32 - 1);
-	display.setFont(nullptr);
-	display.print(buffer);
+	display.setFont(&FreeMonoBold12pt7b);
+	display.setCursor(0, 14);
+	display.print("1354");
 
 	delay(50);
 }
