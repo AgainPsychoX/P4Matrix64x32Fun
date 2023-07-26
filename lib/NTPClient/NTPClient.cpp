@@ -18,13 +18,6 @@ void NTPClient::setPoolServerName(const char* name) {
 	poolServerSpecifiedByName = true;
 }
 
-int16_t NTPClient::getTimeOffset() const {
-	return timeOffset5Minutes * 5;
-}
-void NTPClient::setTimeOffset(int16_t minutes) {
-	timeOffset5Minutes = minutes / 5;
-}
-
 bool NTPClient::sendNTPPacket() {
 	byte buffer[ntpPacketSize];
 	memset(buffer, 0, ntpPacketSize);
@@ -70,8 +63,7 @@ bool NTPClient::update(unsigned long timeout) {
 		}
 		while (packetSize == 0);
 
-		// Account for delays
-		updateMillis = millis() - start;
+		lastUpdateMillis = millis();
 	}
 
 	byte buffer[ntpPacketSize];
@@ -79,25 +71,22 @@ bool NTPClient::update(unsigned long timeout) {
 
 	// NTP returns time since Jan 1 1900 in seconds and fraction parts, each 32 bits.
 	const uint32_t seconds = ntohl(*reinterpret_cast<const uint32_t*>(buffer + 40));
-	lastResponseSeconds = seconds - offsetFrom1900 + timeOffset5Minutes * (5 * 60);
-	Serial.print(lastResponseSeconds);
-	Serial.print('.');
+	lastResponseSeconds = seconds - offsetFrom1900;
 	const uint64_t fraction = ntohl(*reinterpret_cast<const uint16_t*>(buffer + 44));
 	lastResponseMillis = (fraction * 1000) >> 32;
-	Serial.println(lastResponseMillis);
 
 	return true;
 }
 
 uint32_t NTPClient::millisSinceUpdate(const uint32_t currentMillis) const {
-	return currentMillis < updateMillis
-		? (std::numeric_limits<uint32_t>::max() - updateMillis + currentMillis)
-		: currentMillis - updateMillis
+	return currentMillis < lastUpdateMillis
+		? (std::numeric_limits<uint32_t>::max() - lastUpdateMillis + currentMillis)
+		: currentMillis - lastUpdateMillis
 	;
 }
 
 uint32_t NTPClient::unixSeconds(const uint32_t currentMillis) const {
-	return lastResponseSeconds + (lastResponseMillis + millisSinceUpdate(currentMillis)) / 1000;
+	return lastResponseSeconds + (static_cast<uint32_t>(lastResponseMillis) + millisSinceUpdate(currentMillis)) / 1000;
 }
 uint32_t NTPClient::unixSeconds() const {
 	return unixSeconds(millis());

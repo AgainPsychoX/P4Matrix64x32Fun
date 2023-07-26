@@ -2,7 +2,6 @@
 
 #include <Arduino.h>
 #include <WiFiUdp.h>
-#include <TimeUtils.hpp>
 
 /**
  * Simple SNTP client.
@@ -23,11 +22,7 @@ protected:
 		static_assert(sizeof(poolServerName) == sizeof(poolServerIP));
 	};
 
-	bool poolServerSpecifiedByName : 1;
-	/**
-	 * Time offset relative to NTP response time (UTC), as number of 5 minutes intervals, negative or positive.
-	 */
-	int16_t timeOffset5Minutes : 15;
+	bool poolServerSpecifiedByName;
 
 public:
 	ip4_addr_t getPoolServerIP() const;
@@ -47,7 +42,7 @@ public:
 	/**
 	 * Last update `millis()` timestamp.
 	 */
-	uint32_t updateMillis;
+	uint32_t lastUpdateMillis;
 
 	/**
 	 * Seconds part of latest response got from the NTP server, with configured time offset applied.
@@ -59,18 +54,15 @@ public:
 	uint16_t lastResponseMillis;
 
 	NTPClient(UDP& udp)
-		: udp(udp), poolServerName(defaultPoolServerName), poolServerSpecifiedByName(true), 
-			timeOffset5Minutes(0)
+		: udp(udp), poolServerName(defaultPoolServerName), poolServerSpecifiedByName(true)
 	{}
 
 	NTPClient(UDP& udp, const char* poolServerName)
-		: udp(udp), poolServerName(poolServerName), poolServerSpecifiedByName(true), 
-			timeOffset5Minutes(0)
+		: udp(udp), poolServerName(poolServerName), poolServerSpecifiedByName(true)
 	{}
 
 	NTPClient(UDP& udp, ip4_addr_t poolServerIP)
-		: udp(udp), poolServerIP(poolServerIP), poolServerSpecifiedByName(false), 
-			timeOffset5Minutes(0)
+		: udp(udp), poolServerIP(poolServerIP), poolServerSpecifiedByName(false)
 	{}
 
 protected:
