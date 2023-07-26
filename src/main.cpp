@@ -60,7 +60,7 @@ void ntpUpdate() {
 		uint32_t remainingMillis = static_cast<uint32_t>(ntp.lastResponseMillis) + ntp.millisSinceUpdate(millis());
 		timeval tv {
 			.tv_sec = ntp.lastResponseSeconds + remainingMillis / 1000,
-			.tv_usec = remainingMillis % 1000,
+			.tv_usec = static_cast<suseconds_t>(remainingMillis % 1000),
 		};
 		settimeofday(&tv, nullptr);
 	}
