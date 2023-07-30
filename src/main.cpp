@@ -163,9 +163,15 @@ void setup() {
 	oneWireThermometers.begin();
 	oneWireThermometers.requestTemperatures();
 	float t = oneWireThermometers.getTempCByIndex(0);
-	if (t != DEVICE_DISCONNECTED_C) {
-		temperature = t;
+	if (t == DEVICE_DISCONNECTED_C) {
+		LOG_ERROR(Temperature, "Not connected");
 	}
+	else {
+		temperature = t;
+		LOG_DEBUG(Temperature, "First read: %.1f", temperature);
+	}
+	oneWireThermometers.setWaitForConversion(true);
+	oneWireThermometers.requestTemperatures();
 
 	// Initialize networking
 	LOG_DEBUG(WiFi, "MODE=" STRINGIFY(WIFI_MODE) ", SSID=" WIFI_SSID ", PASS=" WIFI_PASS ".");
@@ -234,12 +240,13 @@ void loop() {
 	}
 
 	// Update thermometer read
-	{
-		oneWireThermometers.requestTemperatures();
+	if (oneWireThermometers.isConversionComplete()) {
 		float t = oneWireThermometers.getTempCByIndex(0);
 		if (t != DEVICE_DISCONNECTED_C) {
 			temperature = (temperature + t) / 2;
 		}
+
+		oneWireThermometers.requestTemperatures();
 	}
 
 	char buffer[16];
@@ -270,12 +277,25 @@ void loop() {
 
 	// Display temperature 
 	{
-		sprintf(buffer, "%.1f C", temperature);
 		display.fillRect(0, 24, 64, 8, display.color565(0, 0, 0));
-		display.setCursor(0, 32 - 1);
 		display.setFont(nullptr); // back to built-in 6x8
-		display.setTextColor(colors::to565(colorForTemperature(temperature)));
+		uint16_t color = colors::to565(colorForTemperature(temperature));
+		display.setTextColor(color);
+		sprintf(buffer, "%.1f", temperature);
+		size_t i = 1;
+		while (buffer[i++] != '.'); // find char after dot
+		buffer[i - 1] = 0;
+		display.setCursor(0, 25);
 		display.print(buffer);
+		display.fillRect(display.getCursorX(), 25 + 5, 2, 2, color);
+		display.setCursor(display.getCursorX() + 3, 25);
+		display.print(buffer + i);
+		display.drawPixel(display.getCursorX(),     25 + 1, color);
+		display.drawPixel(display.getCursorX() + 2, 25 + 1, color);
+		display.drawPixel(display.getCursorX() + 1, 25,     color);
+		display.drawPixel(display.getCursorX() + 1, 25 + 2, color);
+		display.setCursor(display.getCursorX() + 4, 25);
+		display.print('C');
 	}
 
 	// sprintf(buffer, "%lu", currentMillis);
