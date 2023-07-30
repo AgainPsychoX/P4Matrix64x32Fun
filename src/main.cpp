@@ -1,5 +1,5 @@
 #include "common.hpp"
-#define PxMATRIX_double_buffer true
+#define PxMATRIX_double_buffer false
 #include <PxMatrix.h>
 #include <Fonts/FreeSerifBold12pt7b.h>
 #include <Ticker.h>
@@ -7,6 +7,12 @@
 #include <NTPClient.hpp>
 #include <TimeUtils.hpp>
 #include <ctime>
+#include <vector>
+#include <tuple>
+#include <DallasTemperature.h> // for DS18B20 thermometer
+#include "colors.hpp"
+
+////////////////////////////////////////////////////////////////////////////////
 
 #ifndef WIFI_SSID
 #	warning Using default WiFi settings
@@ -30,6 +36,14 @@
 #	define WIFI_DNS "1.1.1.1"
 #endif
 
+inline IPAddress stringIPAddress(const char* str) {
+	IPAddress a;
+	a.fromString(str);
+	return a;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 // Pins & width for the display
 #define P_LAT 16
 #define P_A 5
@@ -45,6 +59,8 @@
 
 Ticker displayTicker;
 PxMATRIX display(MATRIX_WIDTH, MATRIX_HEIGHT, P_LAT, P_OE, P_A, P_B, P_C, P_D);
+
+////////////////////////////////////////////////////////////////////////////////
 
 /// Local UDP socket for NTP client.
 WiFiUDP ntpUDP;
@@ -69,18 +85,59 @@ void ntpUpdate() {
 	}
 }
 
-inline IPAddress stringIPAddress(const char* str) {
-	IPAddress a;
-	a.fromString(str);
-	return a;
+////////////////////////////////////////////////////////////////////////////////
+
+OneWire oneWire;
+DallasTemperature oneWireThermometers(&oneWire);
+float temperature = 0; // avg of last and current read (simplest noise reduction)
+
+/// \brief Holds expected colors for given temperatures. 
+///        Should be always kept sorted by temperature (ascending).
+std::vector<std::tuple<float, colors::RGB>> keyColorsForTemperatures = {
+	{5.0f,  {0, 0, 255}},
+	{15.0f, {0, 255, 0}},
+	{25.0f, {255, 0, 0}},
+};
+
+/// \brief Finds or interpolates (in HSL space) color for temperature, 
+///        based on `keyColorsForTemperatures` (which is expected to be sorted).
+/// \param temperature temperature to get color for
+/// \return RGB color
+colors::RGB colorForTemperature(float temperature) {
+	using namespace colors;
+	
+	auto const& [firstTemperature, firstColor] = keyColorsForTemperatures.front();
+	if (temperature <= firstTemperature) {
+		return firstColor;
+	}
+
+	for (
+		auto it = keyColorsForTemperatures.cbegin() + 1;
+		it != keyColorsForTemperatures.cend();
+		++it
+	) {
+		auto const& [previousTemperature, previousColor] = *(it - 1);
+		auto const& [currentTemperature, currentColor] = *it;
+
+		if (temperature <= currentTemperature) {
+			float ratio = (temperature - previousTemperature) / (currentTemperature - previousTemperature);
+			return toRGB(interpolateHSL(toHSL(previousColor), toHSL(currentColor), ratio));
+		}
+	}
+
+	auto const& [lastTemperature, lastColor] = keyColorsForTemperatures.back();
+	return lastColor;
 }
+
+////////////////////////////////////////////////////////////////////////////////
 
 void setup() {
 	// Initialize Serial console
 	Serial.begin(115200);
-	Serial.println();
+	Serial.println("\033[2J\nHello!"); // clears serial output garbage
+	delay(1000);
 
-	// Initialize display
+	// Initialize display 
 	display.begin(8);
 	display.setFastUpdate(true);
 	displayTicker.attach_ms(DISPLAY_INTERVAL, [] {
@@ -99,7 +156,16 @@ void setup() {
 
 	display.fillScreen(display.color565(255, 255, 255));
 	delay(5000);
-#endif	
+#endif
+
+	// Initialize thermometer(s)
+	oneWire.begin(D3);
+	oneWireThermometers.begin();
+	oneWireThermometers.requestTemperatures();
+	float t = oneWireThermometers.getTempCByIndex(0);
+	if (t != DEVICE_DISCONNECTED_C) {
+		temperature = t;
+	}
 
 	// Initialize networking
 	LOG_DEBUG(WiFi, "MODE=" STRINGIFY(WIFI_MODE) ", SSID=" WIFI_SSID ", PASS=" WIFI_PASS ".");
@@ -151,6 +217,8 @@ void setup() {
 	tzset();
 }
 
+////////////////////////////////////////////////////////////////////////////////
+
 #define UPDATE_EVERY(interval)          \
 	for(                                \
 		static unsigned long prev = 0;  \
@@ -165,34 +233,57 @@ void loop() {
 		ntpUpdate();
 	}
 
-	char buffer[16];
-	std::time_t time = std::time({});
-	std::strftime(std::data(buffer), std::size(buffer), "%T", std::localtime(&time));
-	buffer[2] = 0;
-	buffer[5] = 0;
-
-	display.setFont(&FreeSerifBold12pt7b);
-	display.setTextColor(display.color565(0, 0, 255));
-	display.fillRect(0, 0, 64, 24, display.color565(0, 0, 0));
-
-	display.setCursor(0, 0 + 15); 
-	display.print(buffer + 0); // hours
-
-	if (currentMillis % 2000 > 1000) {
-		display.setCursor(23, 0 + 15); 
-		display.print(':');
+	// Update thermometer read
+	{
+		oneWireThermometers.requestTemperatures();
+		float t = oneWireThermometers.getTempCByIndex(0);
+		if (t != DEVICE_DISCONNECTED_C) {
+			temperature = (temperature + t) / 2;
+		}
 	}
 
-	display.setCursor(30, 0 + 15); 
-	display.print(buffer + 3); // minutes
-	// display.print(buffer + 6); // seconds
+	char buffer[16];
 
-	sprintf(buffer, "%lu", currentMillis);
-	display.fillRect(0, 24, 64, 8, display.color565(0, 0, 0));
-	display.setCursor(0, 32 - 1);
-	display.setFont(nullptr); // back to built-in 6x8
-	display.setTextColor(display.color565(0, 0, 63));
-	display.print(buffer);
+	// Display digital clock
+	{
+		std::time_t time = std::time({});
+		std::strftime(std::data(buffer), std::size(buffer), "%T", std::localtime(&time));
+		buffer[2] = 0;
+		buffer[5] = 0;
+
+		display.setFont(&FreeSerifBold12pt7b);
+		display.setTextColor(display.color565(0, 0, 255));
+		display.fillRect(0, 0, 64, 24, display.color565(0, 0, 0));
+
+		display.setCursor(0, 0 + 15); 
+		display.print(buffer + 0); // hours
+
+		if (currentMillis % 2000 > 1000) {
+			display.setCursor(23, 0 + 15); 
+			display.print(':');
+		}
+
+		display.setCursor(30, 0 + 15); 
+		display.print(buffer + 3); // minutes
+		// display.print(buffer + 6); // seconds
+	}
+
+	// Display temperature 
+	{
+		sprintf(buffer, "%.1f C", temperature);
+		display.fillRect(0, 24, 64, 8, display.color565(0, 0, 0));
+		display.setCursor(0, 32 - 1);
+		display.setFont(nullptr); // back to built-in 6x8
+		display.setTextColor(colors::to565(colorForTemperature(temperature)));
+		display.print(buffer);
+	}
+
+	// sprintf(buffer, "%lu", currentMillis);
+	// display.fillRect(0, 24, 64, 8, display.color565(0, 0, 0));
+	// display.setCursor(0, 32 - 1);
+	// display.setFont(nullptr); // back to built-in 6x8
+	// display.setTextColor(display.color565(0, 0, 63));
+	// display.print(buffer);
 
 	delay(50);
 }
