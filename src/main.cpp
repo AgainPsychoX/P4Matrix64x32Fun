@@ -239,20 +239,44 @@ void loop() {
 		ntpUpdate();
 	}
 
-	// Update thermometer read
+	// Update and display thermometer
 	if (oneWireThermometers.isConversionComplete()) {
+		// Update thermometer read
 		float t = oneWireThermometers.getTempCByIndex(0);
 		if (t != DEVICE_DISCONNECTED_C) {
 			temperature = (temperature + t) / 2;
 		}
 
 		oneWireThermometers.requestTemperatures();
+
+		// Display temperature 
+		{
+			char buffer[16];
+			display.fillRect(0, 24, 64, 8, display.color565(0, 0, 0));
+			display.setFont(nullptr); // back to built-in 6x8
+			uint16_t color = colors::to565(colorForTemperature(temperature));
+			display.setTextColor(color);
+			sprintf(buffer, "%.1f", temperature);
+			size_t i = 1;
+			while (buffer[i++] != '.'); // find char after dot
+			buffer[i - 1] = 0;
+			display.setCursor(0, 25);
+			display.print(buffer);
+			display.fillRect(display.getCursorX(), 25 + 5, 2, 2, color);
+			display.setCursor(display.getCursorX() + 3, 25);
+			display.print(buffer + i);
+			display.drawPixel(display.getCursorX(),     25 + 1, color);
+			display.drawPixel(display.getCursorX() + 2, 25 + 1, color);
+			display.drawPixel(display.getCursorX() + 1, 25,     color);
+			display.drawPixel(display.getCursorX() + 1, 25 + 2, color);
+			display.setCursor(display.getCursorX() + 4, 25);
+			display.print('C');
+		}
 	}
 
-	char buffer[16];
-
 	// Display digital clock
-	{
+	UPDATE_EVERY(1000) {
+		char buffer[16];
 		std::time_t time = std::time({});
 		std::strftime(std::data(buffer), std::size(buffer), "%T", std::localtime(&time));
 		buffer[2] = 0;
@@ -273,29 +297,6 @@ void loop() {
 		display.setCursor(30, 0 + 15); 
 		display.print(buffer + 3); // minutes
 		// display.print(buffer + 6); // seconds
-	}
-
-	// Display temperature 
-	{
-		display.fillRect(0, 24, 64, 8, display.color565(0, 0, 0));
-		display.setFont(nullptr); // back to built-in 6x8
-		uint16_t color = colors::to565(colorForTemperature(temperature));
-		display.setTextColor(color);
-		sprintf(buffer, "%.1f", temperature);
-		size_t i = 1;
-		while (buffer[i++] != '.'); // find char after dot
-		buffer[i - 1] = 0;
-		display.setCursor(0, 25);
-		display.print(buffer);
-		display.fillRect(display.getCursorX(), 25 + 5, 2, 2, color);
-		display.setCursor(display.getCursorX() + 3, 25);
-		display.print(buffer + i);
-		display.drawPixel(display.getCursorX(),     25 + 1, color);
-		display.drawPixel(display.getCursorX() + 2, 25 + 1, color);
-		display.drawPixel(display.getCursorX() + 1, 25,     color);
-		display.drawPixel(display.getCursorX() + 1, 25 + 2, color);
-		display.setCursor(display.getCursorX() + 4, 25);
-		display.print('C');
 	}
 
 	// sprintf(buffer, "%lu", currentMillis);
