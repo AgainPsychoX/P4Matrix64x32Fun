@@ -1,6 +1,10 @@
 #pragma once
 
+#include <cstdint>
+#include <new>
 #include <Arduino.h>
+#include <ESP8266WiFi.h> // ip4_addr_t
+#include <coredecls.h> // crc32
 
 static_assert(sizeof(int*) == 4, 
 	"It's ESP/xtensa AVR, 32 bit project, the pointer should be 4 bytes long. "
@@ -75,5 +79,20 @@ constexpr uint32_t hashLogCompStr(const char (&str) [N]) {
 #ifndef LOG_TRACE
 #	define LOG_TRACE(...) 
 #endif
+
+
+
+////////////////////////////////////////////////////////////////////////////////
+// Some global externs for misc stuff
+
+#include <ESP8266WebServer.h>
+#include <EEPROM.h>
+#include "webEncoded/WebCommonUtils.hpp"
+
+// Initialized in main
+extern ESP8266WebServer webServer;
+
+// Get settings object (which is persisted in EEPROM)
+extern Settings* settings;
 
 

@@ -1,7 +1,14 @@
 {
 	"cSpell.words": [
+		"authmode",
+		"bssid",
+		"datetime",
 		"dhcpc",
+		"dhcps",
 		"opmode",
-		"SNTP"
+		"setserver",
+		"SNTP",
+		"SOFTAP",
+		"xtensa"
 	]
 }

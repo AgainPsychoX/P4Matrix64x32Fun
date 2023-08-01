@@ -4,43 +4,13 @@
 #include <Fonts/FreeSerifBold12pt7b.h>
 #include <Ticker.h>
 #include <ESP8266WiFi.h>
-#include <NTPClient.hpp>
-#include <TimeUtils.hpp>
-#include <ctime>
 #include <vector>
 #include <tuple>
 #include <DallasTemperature.h> // for DS18B20 thermometer
+#include "Network.hpp"
+#include "NTP.hpp"
 #include "colors.hpp"
-
-////////////////////////////////////////////////////////////////////////////////
-
-#ifndef WIFI_SSID
-#	warning Using default WiFi settings
-#	define WIFI_MODE WIFI_AP
-#	define WIFI_SSID "MatrixDisplay"
-#	define WIFI_PASS "12345678"
-#	define WIFI_CHANNEL 1
-#endif
-#ifndef WIFI_MODE
-#	define WIFI_MODE WIFI_STA
-#endif
-#ifndef WIFI_CHANNEL
-#	define WIFI_CHANNEL 0
-#endif
-#ifndef WIFI_IP // will use some defaults
-#	define WIFI_IP NULL
-#	define WIFI_NETMASK NULL
-#	define WIFI_GATEWAY NULL
-#endif
-#ifndef WIFI_DNS
-#	define WIFI_DNS "1.1.1.1"
-#endif
-
-inline IPAddress stringIPAddress(const char* str) {
-	IPAddress a;
-	a.fromString(str);
-	return a;
-}
+#include "webEncoded/WebStaticContent.hpp"
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -62,28 +32,10 @@ PxMATRIX display(MATRIX_WIDTH, MATRIX_HEIGHT, P_LAT, P_OE, P_A, P_B, P_C, P_D);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Local UDP socket for NTP client.
-WiFiUDP ntpUDP;
-/// NTP client to update time. The struct is used to store time even when NTP is not available.
-NTPClient ntp(ntpUDP, "pl.pool.ntp.org");
-
-void ntpUpdate() {
-	if (ntp.update(1000)) {
-		const DateTime now = DateTime::fromUnixMillis(ntp.unixMillis());
-		LOG_DEBUG(Time, "Time updated from NTP: %u-%02u-%02u %02u:%02u:%02u (UTC)",
-			now.year, now.month, now.day, now.hour, now.minute, now.second);
-		
-		uint32_t remainingMillis = static_cast<uint32_t>(ntp.lastResponseMillis) + ntp.millisSinceUpdate(millis());
-		timeval tv {
-			.tv_sec = ntp.lastResponseSeconds + remainingMillis / 1000,
-			.tv_usec = static_cast<suseconds_t>(remainingMillis % 1000),
-		};
-		settimeofday(&tv, nullptr);
-	}
-	else {
-		LOG_WARN(Time, "Failed to update time from NTP");
-	}
-}
+Settings* settings;
+ESP8266WebServer webServer(80);
+bool showIP = true;
+constexpr unsigned int showIPtimeout = 20000;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -158,6 +110,31 @@ void setup() {
 	delay(5000);
 #endif
 
+	// Initialize EEPROM
+	{
+		EEPROM.begin(sizeof(Settings));
+		delay(100);
+		settings = reinterpret_cast<Settings*>(EEPROM.getDataPtr());
+
+		if (settings->calculateChecksum() != settings->checksum) {
+			LOG_INFO(EEPROM, "Checksum miss-match, reseting settings to default.");
+			settings->resetToDefault();
+			Network::resetConfig();
+			settings->prepareForSave();
+
+			EEPROM.commit();
+			// TODO: show info on display about reseting EEPROM
+			delay(3000);
+			ESP.restart();
+		}
+	}
+
+	// Initialize networking
+	Network::setup();
+	if (settings->network.mode == Settings::Network::DISABLED) {
+		showIP = false;
+	}
+
 	// Initialize thermometer(s)
 	oneWire.begin(D3);
 	oneWireThermometers.begin();
@@ -173,54 +150,113 @@ void setup() {
 	oneWireThermometers.setWaitForConversion(true);
 	oneWireThermometers.requestTemperatures();
 
-	// Initialize networking
-	LOG_DEBUG(WiFi, "MODE=" STRINGIFY(WIFI_MODE) ", SSID=" WIFI_SSID ", PASS=" WIFI_PASS ".");
-	if (WIFI_MODE == WIFI_AP) {
-		WiFi.softAP(WIFI_SSID, WIFI_PASS, WIFI_CHANNEL);
-		if (WIFI_IP) {
-			WiFi.softAPConfig(stringIPAddress(WIFI_IP), stringIPAddress(WIFI_GATEWAY), stringIPAddress(WIFI_NETMASK));
-		}
-	}
-	else if (WIFI_MODE == WIFI_STA) {
-		WiFi.begin(WIFI_SSID, WIFI_PASS);
-		if (WIFI_IP) {
-			WiFi.config(stringIPAddress(WIFI_IP), stringIPAddress(WIFI_GATEWAY), stringIPAddress(WIFI_NETMASK), stringIPAddress(WIFI_DNS));
-		}
-	}
-	// {
-	// 	ip_info info = {
-	// 		.ip      = hton(parseIPv4("192.168.55.120")),
-	// 		.netmask = hton(parseIPv4("255.255.255.0")),
-	// 		.gw      = hton(parseIPv4("192.168.55.1")),
-	// 	};
-	// 	wifi_set_ip_info(STATION_IF, &info);
-	// 	wifi_station_dhcpc_stop();
-	// 	wifi_fpm_do_wakeup();
-	// 	wifi_fpm_close();
-	// 	wifi_set_opmode(WIFI_STA);
-	// 	station_config conf = {};
-	// 	strncpy_P(reinterpret_cast<char*>(conf.ssid), PSTR(WIFI_SSID), sizeof(conf.ssid));
-	// 	strncpy_P(reinterpret_cast<char*>(conf.password), PSTR(WIFI_PASS), sizeof(conf.password));
-	// 	wifi_station_set_config(&conf);
-	// }
-
-	// Wait for WiFi connection
-	Serial.print("Connecting.");
-	while (WiFi.status() != WL_CONNECTED) {
-		Serial.print('.');
-		delay(250);
-	}
-	Serial.println(" connected!");
-	Serial.print("IP: ");
-	Serial.println(WiFi.localIP());
-
 	// Initialize NTP
-	LOG_TRACE(Time, "Opening local UDP socket for NTP");
-	ntpUDP.begin(10123);
-	ntpUpdate();
-	// TODO: allow changing NTP server & timezone
-	setenv("TZ", "CET-1CEST,M3.5.0,M10.5.0/3", 1); // Hardcoded for Europe/Warsaw
-	tzset();
+	NTP::setup();
+
+	// Register server handlers
+	webServer.on(F("/"), []() {
+		WEB_USE_CACHE_STATIC(webServer);
+		WEB_USE_GZIP_STATIC(webServer);
+		webServer.send(200, WEB_CONTENT_TYPE_TEXT_HTML, WEB_index_html_CONTENT, WEB_index_html_CONTENT_LENGTH);
+	});
+	WEB_REGISTER_ALL_STATIC(webServer);
+
+	webServer.on(F("/status"), []() {
+		char timeString[24];
+		std::time_t time = std::time({});
+		std::strftime(timeString, sizeof(timeString), "%Y-%m-%dT%H:%M:%SZ", std::gmtime(&time));
+		
+		constexpr unsigned int bufferLength = 256;
+		char buffer[bufferLength];
+		int ret = snprintf(
+			buffer, bufferLength,
+			"{"
+				"\"temperature\":%.2f,"
+				"\"timestamp\":\"%s\","
+				"\"rssi\":%d"
+			"}",
+			temperature,
+			timeString,
+			WiFi.RSSI()
+		);
+		if (ret < 0 || static_cast<unsigned int>(ret) >= bufferLength) {
+			webServer.send(500, WEB_CONTENT_TYPE_TEXT_HTML, F("Response buffer exceeded"));
+		}
+		else {
+			webServer.send(200, WEB_CONTENT_TYPE_APPLICATION_JSON, buffer);
+		}
+	});
+
+	webServer.on(F("/config"), []() {
+		if constexpr (debugLevel >= LEVEL_DEBUG) {
+			// Allow changing time for testing
+			if (const String& str = webServer.arg("timestamp"); !str.isEmpty()) {
+				// Format should be like: "2004-02-12T15:19:21" (without time zones)
+				const char* cstr = str.c_str();
+				tm tm {
+					.tm_sec  = atoi(cstr + 17),
+					.tm_min  = atoi(cstr + 14),
+					.tm_hour = atoi(cstr + 11),
+					.tm_mday = atoi(cstr + 8),
+					.tm_mon  = atoi(cstr + 5),
+					.tm_year = atoi(cstr + 0)
+				};
+				std::time_t time = std::mktime(&tm);
+				timeval tv {
+					.tv_sec = time,
+					.tv_usec = 500'000,
+				};
+				settimeofday(&tv, nullptr);
+			}
+		}
+
+		// Handle network config
+		Network::handleConfigArgs();
+
+		// Response with current config
+		constexpr unsigned int bufferLength = 640;
+		char buffer[bufferLength];
+		int ret = snprintf_P(
+			buffer, bufferLength,
+			PSTR("{"
+				"\"network\":%s"
+			"}"),
+			Network::getConfigJSON().get()
+		);
+		if (ret < 0 || static_cast<unsigned int>(ret) >= bufferLength) {
+			webServer.send(500, WEB_CONTENT_TYPE_TEXT_HTML, F("Response buffer exceeded"));
+		}
+		else {
+			webServer.send(200, WEB_CONTENT_TYPE_APPLICATION_JSON, buffer);
+		}
+
+		// As somebody connected, remove flag
+		showIP = false;
+	});
+
+	webServer.on(F("/saveEEPROM"), []() {
+		LOG_DEBUG(EEPROM, "Preparing to save EEPROM");
+		LOG_TRACE(EEPROM, "settings ptr = %p", settings);
+		LOG_TRACE(EEPROM, "current checksum    = %u", settings->checksum);
+		LOG_TRACE(EEPROM, "calculated checksum = %u", settings->calculateChecksum());
+		if (settings->prepareForSave()) {
+			EEPROM.commit();
+			LOG_DEBUG(EEPROM, "EEPROM saved");
+		}
+		webServer.send(200);
+	});
+
+	if constexpr (debugLevel >= LEVEL_DEBUG) {
+		// Hidden API for testing proposes
+		webServer.on(F("/test"), []() {
+			webServer.send(204);
+		});
+	}
+
+	webServer.onNotFound([]() {
+		webServer.send(404, WEB_CONTENT_TYPE_TEXT_PLAIN, PSTR("Not found\n\n"));
+	});
+	webServer.begin();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -235,8 +271,12 @@ void setup() {
 void loop() {
 	unsigned long currentMillis = millis();
 
+	webServer.handleClient();
+
+	// TODO: show IP on display for a while or until connected
+
 	UPDATE_EVERY(60 * 60 * 1000) {
-		ntpUpdate();
+		NTP::update();
 	}
 
 	// Update and display thermometer
@@ -298,13 +338,4 @@ void loop() {
 		display.print(buffer + 3); // minutes
 		// display.print(buffer + 6); // seconds
 	}
-
-	// sprintf(buffer, "%lu", currentMillis);
-	// display.fillRect(0, 24, 64, 8, display.color565(0, 0, 0));
-	// display.setCursor(0, 32 - 1);
-	// display.setFont(nullptr); // back to built-in 6x8
-	// display.setTextColor(display.color565(0, 0, 63));
-	// display.print(buffer);
-
-	delay(50);
 }

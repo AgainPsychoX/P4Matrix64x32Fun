@@ -57,6 +57,12 @@ hton(T value) noexcept
 	/***/ | ((value & 0x00000000000000FFull) << 56);
 }
 
+
+constexpr bool parseBoolean(const char* str) {
+	//return str[0] == '1' || str[0] == 't' || str[0] == 'T' || str[0] == 'y' || str[0] == 'Y';
+	return !(str[0] == '0' || str[0] == 'f' || str[0] == 'F' || str[0] == 'n' || str[0] == 'N');
+}
+
 // Taken from https://stackoverflow.com/a/65765075/4880243
 constexpr std::int32_t parseInt(std::string_view str, std::size_t* pos = nullptr) {
 	using namespace std::literals;

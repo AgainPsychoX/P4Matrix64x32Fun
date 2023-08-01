@@ -1,18 +1,19 @@
 
-# P4 Matrix 64x32 LED display
+# Fun with P4 Matrix 64x32 LED display
 
-<!-- TODO: short description -->
+Project uses P4 Matrix 64x32 LED display with thermometer and internet access (for time, weather) controlled by ESP8266 platform. Created for my dad.
 
 <!-- TODO: image or two -->
 
-
-
-
-## Features
+##### Features
 
 + Time synchronization using minimalistic NTP.
 + Digital clock.
-+ Simple WiFi connectivity.
++ Thermometer reading and display.
++ Portal website hosted over Wi-Fi with status and configuration.
++ Most of UI uses Polish language.
+
+
 
 
 
@@ -22,13 +23,20 @@
 + [NodeMCU v3 board with ESP-12E (ESP8266) microcontroller](https://mischianti.org/2022/02/09/nodemcu-v3-high-resolution-pinout-and-specs/)
 + [Thermometer: DS18B20 (via OneWire on PIN D3)](https://www.analog.com/media/en/technical-documentation/data-sheets/DS18B20.pdf)
 
-<!-- TODO: links and more specific info -->
-
 
 
 
 
 ## Software
+
+[Platform IO](https://platformio.org/platformio-ide) is used with Arduino framework for development.
+
+
+### Modules
+
+* Web server;
+* Network code (connect to configured network, incl. IP configuration; or host AP);
+* NTP code;
 
 <!-- TODO: ... -->
 
@@ -38,9 +46,9 @@
 
 ## Notes
 
++ A lot of code (and directly many issues & possible improvements) shared with [my other project: AquariumController](https://github.com/AgainPsychoX/AquariumController). 
 + Display-related code based on PxMatrix examples, including [Aurora Demo](https://github.com/2dom/PxMatrix/blob/0c7c63c0248321a31dedcefcdaebc87df4624141/examples/Aurora_Demo/Aurora_Demo.ino). Specific library version from GitHub is used, PlatformIO registry has old version (with same internal version number XD)
 + [Interesting thing I found while working on project is you can use unsigned integer form of IPv4 addresses](https://www.browserling.com/tools/ip-to-dec).
-+ Test whenever **not** using Arduino `WiFi.*` makes it get optimized away. If so, drop it.
 + Some WiFi names/passwords (incl. `$` or `-`?`) seems not work for some reason.
 + Problems using `GPIO9` and `GPIO10` for OneWire (constant crashes or upload errors)
 	+ [Some people](https://www.letscontrolit.com/forum/viewtopic.php?t=1462) suggest using [DIO](https://hackaday.com/2017/10/01/trouble-flashing-your-esp8266-meet-dio-and-qio/) [flashing mode](https://docs.platformio.org/en/stable/platforms/espressif8266.html#flash-mode).
