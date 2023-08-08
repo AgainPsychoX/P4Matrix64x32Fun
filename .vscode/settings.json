@@ -2,10 +2,12 @@
 	"cSpell.words": [
 		"authmode",
 		"bssid",
+		"clocale",
 		"datetime",
 		"dhcpc",
 		"dhcps",
 		"opmode",
+		"setlocale",
 		"setserver",
 		"SNTP",
 		"SOFTAP",

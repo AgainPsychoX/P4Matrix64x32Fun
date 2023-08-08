@@ -34,11 +34,55 @@ Project uses P4 Matrix 64x32 LED display with thermometer and internet access (f
 
 ### Modules
 
-* Web server;
+* Web server (serving static content, status & assets; handling config & uploaded assets re-encoding);
 * Network code (connect to configured network, incl. IP configuration; or host AP);
 * NTP code;
+* Display code
 
+### 
 <!-- TODO: ... -->
+
+### Configuration
+
+Configuration is divided between EEPROM and file-system based. EEPROM contains configuration related to basic operation, including networking, timezones, weather location and more. File system contains pages configurations and assets (including bitmaps for backgrounds).
+
+#### EEPROM
+
+EEPROM settings can be set by accessing HTTP `/config` endpoint (GET/POST) and are saved only if `save=true` is provided along the overridden settings. Detailed EEPROM in-memory layout is defined in [`config.hpp`](src/config.hpp) file. Some settings of `/config` are missing in the layout due being saved by internal platform code, i.e. network SSID & password.
+
+```json
+"_ TODO: add pretty-printed example /config"
+```
+
+#### Page configuration
+
+Each page is configured via binary file at `/pages/0/config` where `0` is page ID/number. Each page can have analog clock and have up to 7 sprites that can be text,  special character, time (formatted as text), image or animation. Exact format is defined in [`page.hpp`](src/page.hpp) file. For example, time-based text sprite that uses `strftime` with custom extensions (`%o` or `%O` for Roman numeral month) can be used to create digital clock and/or display dates.
+
++ All file-system names are lower-case only.
++ Weather types for file names:
+	+ `unknown` (default/secondary fallback)
+	+ `sunny`
+	+ `moony` (sunny at night)
+	+ `a-bit-cloudy`
+	+ `cloudy`
+	+ `rainy` (high chance for rain)
+	+ `rain` (heavy rain)
+	+ `rainbow` (raining, but sunny)
+	+ `snowy`
+	+ `snow`
+	+ `storm` (very windy with heavy rain)
+	+ `thunder` (little rain)
+	+ `thunderstorm`
+	+ `blizzard` (snow storm)
+	+ `windy`
++ Months file names use english full names.
++ Season names: `spring`, `summer`, `fall`, `winter`.
+
+#### Bitmaps encoding
+
+Bitmaps can be used as assets for backgrounds/animations/sprites. Stored bitmaps should be encoded as simple [BMP file](https://en.wikipedia.org/wiki/BMP_file_format) with standard `BITMAPINFOHEADER`, with 16 bits per pixel (confirm to RGB565 used by the display PxMatrix library; as opposed to default 24 bits), with mask specified, with no compression. The encoding is assured by re-encoding when handling uploads by web server and when [uploading file-system image by PlatformIO](https://docs.platformio.org/en/latest/platforms/espressif8266.html#using-filesystem) `pre` script.
+
+Bitmaps can be symlinked, if the file contains path (content starting with `/` instead `BM` of regular BMP file header). Bitmaps can be used for animations, if so, often frame duration can be specified from inside file by reusing file header reserved fields (`uint16_t` right after file size).
 
 
 
@@ -57,28 +101,25 @@ Project uses P4 Matrix 64x32 LED display with thermometer and internet access (f
 
 ### To-do
 
++ Implement pages system as described in README above ;)
 + Analog clock
 	- Background buffer
 	- Clearing as replacing stuff with buffer
 	- Temporary code to setup temporary monochromatic buffer
 	- Draw 3 lines from center as the time goes
 	- Start the lines from center 2x2 pixels?
-+ Use DS (GPIO 10) for temperature reading
-	- Find the right library
-	- Place it somewhere on the display
-	- Value smoothing?
-	- Test & commit
 + HTTP server
-	+ Status (time, RSSI, ...)
-		- Usual stuff, just copy code ;)
-	+ Networking settings
-		- For now could be left untouched, just hardcode stuff
-		- Later: maybe copy & adapt code from YellowToyCar (and partially from AquariumController?)
 	+ Get current state as image
 		- Access display buffer
 		- Define request handler with right response type
 		- Encode the buffer into BMP for output
 	+ Filesystem? (instead embedding bytes into code)
++ Weather info
+	+ Find service/API
+	+ Show as text
+	+ Show with icon
+	+ Show with animated icon
+	+ Configurable location
 + Clock background
 	+ Configurable by image file (BMP)
 	+ Download from external (periodic; from configured address)
@@ -94,7 +135,8 @@ Project uses P4 Matrix 64x32 LED display with thermometer and internet access (f
 	+ Live preview
 	+ Fill by color
 	+ Undo/redo
-+ Weather info
++ Rewrite the display library? Low code quality, draw pixel optimizations possible?
++ Use [better library for web server](https://github.com/me-no-dev/ESPAsyncWebServer).
 + Snake game? ;)
-
-
++ Curious...
+	+ Does `std::setlocale` from `<clocale>` works?
