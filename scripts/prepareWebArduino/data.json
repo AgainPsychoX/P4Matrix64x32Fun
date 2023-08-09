@@ -11,6 +11,7 @@
 		// "gif":			"image/gif",
 		"jpg":			"image/jpeg",
 		"jpeg":			"image/jpeg",
+		"bmp":			"image/bmp",
 		// "ico":			"image/x-icon",
 		// "svg":			"image/svg+xml",
 		// "ttf":			"application/x-font-ttf",

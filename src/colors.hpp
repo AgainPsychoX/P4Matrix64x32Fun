@@ -1,3 +1,5 @@
+#pragma once
+
 #include <algorithm> // min, max
 
 namespace colors {
@@ -10,13 +12,9 @@ struct HSL {
 	float h, s, l;
 };
 
-HSL toHSL(RGB rgb) {
-	float r_ = float(rgb.r) / 255;
-	float g_ = float(rgb.g) / 255;
-	float b_ = float(rgb.b) / 255;
-
-	float maxColor = std::max({r_, g_, b_});
-	float minColor = std::min({r_, g_, b_});
+HSL toHSL(float r, float g, float b) {
+	float maxColor = std::max({r, g, b});
+	float minColor = std::min({r, g, b});
 	float h, s, l;
 
 	l = (maxColor + minColor) / 2;
@@ -27,19 +25,36 @@ HSL toHSL(RGB rgb) {
 	else {
 		float d = maxColor - minColor;
 		s = l > 0.5F ? d / (2.0F - maxColor - minColor) : d / (maxColor + minColor);
-		if (maxColor == r_) {
-			h = (g_ - b_) / d + (g_ < b_ ? 6 : 0);
+		if (maxColor == r) {
+			h = (g - b) / d + (g < b ? 6 : 0);
 		} 
-		else if (maxColor == g_) {
-			h = (b_ - r_) / d + 2;
+		else if (maxColor == g) {
+			h = (b - r) / d + 2;
 		} 
 		else {
-			h = (r_ - g_) / d + 4;
+			h = (r - g) / d + 4;
 		}
 		h *= 60;
 	}
 
 	return {h, s * 100, l * 100};
+}
+
+HSL toHSL(RGB rgb) {
+	return toHSL(
+		float(rgb.r) / 255, 
+		float(rgb.g) / 255, 
+		float(rgb.b) / 255
+	);
+}
+
+// TODO: test if this is more optimal than toHSL(toRGH(x))
+HSL toHSL(uint16_t rgb565) {
+	return toHSL(
+		float(rgb565) / 0b1111100000000000,
+		float(rgb565) / 0b0000011111100000,
+		float(rgb565) / 0b0000000000011111
+	);
 }
 
 namespace {
@@ -69,6 +84,14 @@ RGB toRGB(HSL hsl) {
 		static_cast<uint8_t>(r * 255), 
 		static_cast<uint8_t>(g * 255), 
 		static_cast<uint8_t>(b * 255)
+	};
+}
+
+inline RGB toRGB(uint16_t rgb565) {
+	return {
+		static_cast<uint8_t>((rgb565 & 0b1111100000000000) >> 8), // r
+		static_cast<uint8_t>((rgb565 & 0b0000011111100000) >> 3), // g
+		static_cast<uint8_t>((rgb565 & 0b0000000000011111) << 3), // b
 	};
 }
 

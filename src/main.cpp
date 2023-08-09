@@ -4,12 +4,11 @@
 #include <Fonts/FreeSerifBold12pt7b.h>
 #include <Ticker.h>
 #include <ESP8266WiFi.h>
-#include <vector>
-#include <tuple>
 #include <DallasTemperature.h> // for DS18B20 thermometer
+#include <LittleFS.h>
 #include "Network.hpp"
 #include "NTP.hpp"
-#include "colors.hpp"
+#include "pages.hpp"
 #include "webEncoded/WebStaticContent.hpp"
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -42,44 +41,6 @@ constexpr unsigned int showIPtimeout = 20000;
 OneWire oneWire;
 DallasTemperature oneWireThermometers(&oneWire);
 float temperature = 0; // avg of last and current read (simplest noise reduction)
-
-/// \brief Holds expected colors for given temperatures. 
-///        Should be always kept sorted by temperature (ascending).
-std::vector<std::tuple<float, colors::RGB>> keyColorsForTemperatures = {
-	{5.0f,  {0, 0, 255}},
-	{15.0f, {0, 255, 0}},
-	{25.0f, {255, 0, 0}},
-};
-
-/// \brief Finds or interpolates (in HSL space) color for temperature, 
-///        based on `keyColorsForTemperatures` (which is expected to be sorted).
-/// \param temperature temperature to get color for
-/// \return RGB color
-colors::RGB colorForTemperature(float temperature) {
-	using namespace colors;
-	
-	auto const& [firstTemperature, firstColor] = keyColorsForTemperatures.front();
-	if (temperature <= firstTemperature) {
-		return firstColor;
-	}
-
-	for (
-		auto it = keyColorsForTemperatures.cbegin() + 1;
-		it != keyColorsForTemperatures.cend();
-		++it
-	) {
-		auto const& [previousTemperature, previousColor] = *(it - 1);
-		auto const& [currentTemperature, currentColor] = *it;
-
-		if (temperature <= currentTemperature) {
-			float ratio = (temperature - previousTemperature) / (currentTemperature - previousTemperature);
-			return toRGB(interpolateHSL(toHSL(previousColor), toHSL(currentColor), ratio));
-		}
-	}
-
-	auto const& [lastTemperature, lastColor] = keyColorsForTemperatures.back();
-	return lastColor;
-}
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -153,6 +114,10 @@ void setup() {
 	// Initialize NTP
 	NTP::setup();
 
+	// Initialize file system
+	// LittleFS.setConfig(LittleFSConfig(/*autoFormat=*/ false));
+	LittleFS.begin();
+
 	// Register server handlers
 	webServer.on(F("/"), []() {
 		WEB_USE_CACHE_STATIC(webServer);
@@ -213,6 +178,18 @@ void setup() {
 		// Handle network config
 		Network::handleConfigArgs();
 
+		// Save to EEPROm
+		if (parseBoolean(webServer.arg("save").c_str())) {
+			LOG_DEBUG(EEPROM, "Preparing to save EEPROM");
+			LOG_TRACE(EEPROM, "settings ptr = %p", settings);
+			LOG_TRACE(EEPROM, "current checksum    = %u", settings->checksum);
+			LOG_TRACE(EEPROM, "calculated checksum = %u", settings->calculateChecksum());
+			if (settings->prepareForSave()) {
+				EEPROM.commit();
+				LOG_DEBUG(EEPROM, "EEPROM saved");
+			}
+		}
+
 		// Response with current config
 		constexpr unsigned int bufferLength = 640;
 		char buffer[bufferLength];
@@ -234,24 +211,14 @@ void setup() {
 		showIP = false;
 	});
 
-	webServer.on(F("/saveEEPROM"), []() {
-		LOG_DEBUG(EEPROM, "Preparing to save EEPROM");
-		LOG_TRACE(EEPROM, "settings ptr = %p", settings);
-		LOG_TRACE(EEPROM, "current checksum    = %u", settings->checksum);
-		LOG_TRACE(EEPROM, "calculated checksum = %u", settings->calculateChecksum());
-		if (settings->prepareForSave()) {
-			EEPROM.commit();
-			LOG_DEBUG(EEPROM, "EEPROM saved");
-		}
-		webServer.send(200);
-	});
-
 	if constexpr (debugLevel >= LEVEL_DEBUG) {
 		// Hidden API for testing proposes
 		webServer.on(F("/test"), []() {
 			webServer.send(204);
 		});
 	}
+
+	webServer.addHandler(&PageConfiguration::requestHandler);
 
 	webServer.onNotFound([]() {
 		webServer.send(404, WEB_CONTENT_TYPE_TEXT_PLAIN, PSTR("Not found\n\n"));

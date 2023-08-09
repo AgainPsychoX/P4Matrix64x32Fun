@@ -1,7 +1,10 @@
-#include "common.hpp"
+#pragma once
 
-#define STRUCT_PADDING_BYTES(size) private: uint8_t _pad_##__LINE__[size]; public:
-#define STRUCT_PADDING_BITS(size) private: uint8_t _pad_##__LINE__ : size; public:
+#include "common.hpp"
+#include "bitmap.hpp"
+
+#define STRUCT_PADDING_BYTES(size) private: uint8_t ANONYMOUS_VARIABLE(_pad_)[size]; public:
+#define STRUCT_PADDING_BITS(size) private: uint8_t ANONYMOUS_VARIABLE(_pad_) : size; public:
 
 namespace PageConfiguration { 
 
@@ -146,3 +149,43 @@ struct Page {
 };
 constexpr auto _sizeof_Page = sizeof(Page);
 static_assert(sizeof(Page) <= 256);
+
+////////////////////////////////////////////////////////////////////////////////
+
+const char* mimeTypeForFile(const char* name);
+
+class RequestHandler : public ESP8266WebServer::RequestHandlerType {
+	/// Checking whenever given handler can be used should be already done 
+	/// by request parsing when selecting right handler, but allow double checking.
+	static constexpr bool ensureHandlerCanHandleRequest = false;
+
+public:
+	bool canHandle(HTTPMethod requestMethod, const String& requestUri) override {
+		return requestUri.startsWith(F("/pages"));
+	}
+
+	bool canUpload(const String& requestUri) override {
+		return canHandle(HTTP_POST, requestUri);
+	}
+
+	bool handle(ESP8266WebServer& server, HTTPMethod requestMethod, const String& requestUri) override;
+
+	void upload(ESP8266WebServer& server, const String& requestUri, HTTPUpload& upload) override;
+
+protected:
+	enum class ProcessingType : uint8_t {
+		None,
+		Bitmap, // image/bmp
+		Configuration, // application/octet-stream
+	};
+
+	File uploadedFile;
+	uint8_t uploadedFilesCount = 0;
+	ProcessingType processingType;
+	BMP::RGB565Converter bitmapProcessor; // TODO: dynamicly allocate & RAII
+	int errorCode;
+};
+
+extern RequestHandler requestHandler;
+
+}

@@ -3,6 +3,10 @@
 #include <cstdint>
 #include <string_view>
 
+#define CONCATENATE_DIRECT(X, Y) X##Y
+#define CONCATENATE(X, Y) CONCATENATE_DIRECT(X, Y)
+#define ANONYMOUS_VARIABLE(str) CONCATENATE(str, __LINE__)
+
 // Utils to help printf as binary
 #define BYTE_TO_BINARY_PATTERN "%c%c%c%c%c%c%c%c"
 #define BYTE_TO_BINARY(byte)   \
@@ -111,3 +115,8 @@ namespace {
 	static_assert(hton(parseIPv4("192.168.55.17"sv)) == 288860352);
 }
 
+inline unsigned int baseTwoDigits(unsigned int x) {
+	return x ? 32 - __builtin_clz(x) : 0;
+}
+
+unsigned int baseTenDigits(unsigned int x);
