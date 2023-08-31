@@ -25,5 +25,10 @@
 		// "pdf":			"application/pdf",
 		// "appcache":		"text/cache-manifest",
 		"default":		"application/octet-stream"
+	},
+	"preprocessor": {
+		"mimeTypeRegex": "text/.*|/.*script|/json",
+		"skipBegin": "PREPARE WEB ARDUINO SKIP OUTPUT BEGIN",
+		"skipEnd": "PREPARE WEB ARDUINO SKIP OUTPUT END"
 	}
 }

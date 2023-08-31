@@ -71,13 +71,39 @@ program
 		const getConstNameForPathPart = (path) => path.replace(/[./\-+#\(\)\[\]]/g, '_');
 
 		const excludeRegExp = new RegExp(options.exclude.map(x => `(?:${globToRegExp(x).source})`).join('|'));
+		const preprocessorEnabledMimeTypesRegExp = new RegExp(data.preprocessor.mimeTypesRegex);
 
 		// Processing files
 		const processed = [];
 		async function processFile(filename, inputPath, relativePath) {
 			console.debug(`Processing ${inputPath}`);
 			const outputPath = path.join(options.outputDirectory, filename + '.cpp');
-			const data = await fs.readFile(inputPath);
+			
+			const foundMimeType = data.mimeTypes[getExtension(filename).toLowerCase()];
+			
+			if (preprocessorEnabledMimeTypesRegExp.test(foundMimeType)) {
+				// Simple preprocessing to skip lines
+				data = await fs.readFile(inputPath, 'utf-8');
+				const remainingLines = [];
+				let skipping = false;
+				for (const line of data.split(/\r?\n/)) {
+					if (line.includes(data.preprocessor.skipBegin)) {
+						skipping = true;
+					}
+					if (skipping) {
+						if (line.includes(data.preprocessor.skipEnd)) {
+							skipping = false;
+							continue;
+						}
+					}
+					remainingLines.push(line);
+				}
+				data = remainingLines.join('\n');
+			}
+			else {
+				data = await fs.readFile(inputPath);
+			}
+
 			let hexString = zlib.gzipSync(data).toString('hex');
 			const hexDigitPairs = [];
 			while (hexString.length) {
