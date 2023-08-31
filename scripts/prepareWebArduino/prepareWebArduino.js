@@ -2,6 +2,19 @@
 const { program } = require('commander');
 const packageJSON = require('./package.json');
 
+function collectRepeatable(value, previous) {
+	if (value._isDefault) {
+		value = [];
+	}
+	previous.push(value);
+	return previous;
+}
+
+function defaultRepeatable(array) {
+	array._isDefault = true;
+	return array;
+}
+
 program
 	.name('prepareWebArduino')
 	.version(packageJSON.version)
@@ -11,6 +24,7 @@ program
 	.option('--clean',                              'removes everything from output directory first')
 	.option('--include-all-basename [basename]',    'change name of include-all file',               'WebStaticContent')
 	.option('--common-code-basename [basename]',    'change basename of common code file',           'WebCommonUtils')
+	.option('--exclude <pattern>',                  'excludes input files by glob pattern', collectRepeatable, defaultRepeatable(['.gitignore', 'codeswing.json']))
 	.option('--no-timestamp',                       'disable adding timestamp to include-all file')
 	.option('--no-debug-prints',                    'disable debug printing (on every static content served)')
 	.option('--debug-print-snippet [code]',         'code for debug printing',                       'Serial.println("Web serving static /${path}")')
@@ -42,7 +56,7 @@ program
 
 		const onlyUnique = (value, index, self) => self.indexOf(value) === index;
 
-		const getExtension = (path) => {
+		function getExtension(path) {
 			// from https://stackoverflow.com/a/12900504/4880243
 			const basename = path.split(/[\\/]/).pop();	// extract file name from full path ...
 														// (supports `\\` and `/` separators)
@@ -56,9 +70,11 @@ program
 		const getConstNameForMimeType = (mimeType) => `WEB_CONTENT_TYPE_${mimeType.replace(/[./+-]/g, '_').toUpperCase()}`;
 		const getConstNameForPathPart = (path) => path.replace(/[./\-+#\(\)\[\]]/g, '_');
 
+		const excludeRegExp = new RegExp(options.exclude.map(x => `(?:${globToRegExp(x).source})`).join('|'));
+
 		// Processing files
 		const processed = [];
-		const processFile = async (filename, inputPath, relativePath) => {
+		async function processFile(filename, inputPath, relativePath) {
 			console.debug(`Processing ${inputPath}`);
 			const outputPath = path.join(options.outputDirectory, filename + '.cpp');
 			const data = await fs.readFile(inputPath);
@@ -89,12 +105,15 @@ ${'0x' + hexDigitPairs.join(', 0x')}
 				compressedSize,
 			});
 		}
-		const processDirectory = async (directoryPath, directoryRelativePath) => {
+		async function processDirectory(directoryPath, directoryRelativePath) {
 			const files = await fs.opendir(directoryPath);
 			const promises = [];
 			for await (const file of files) {
 				const relativePath = path.join(directoryRelativePath, file.name);
 				const inputPath = path.join(options.inputDirectory, file.name);
+				if (excludeRegExp.test(relativePath)) {
+					continue; // skip excluded
+				}
 				if (file.isDirectory()) {
 					console.log(`Processing subdirectory ${inputPath}`);
 					promises.push(processDirectory(inputPath, relativePath));
@@ -200,7 +219,9 @@ constexpr unsigned short int WEB_${constNamePathPart}_CONTENT_LENGTH = ${entry.c
 				processed.map(entry => {
 					const path = entry.relativePath;
 					const constNamePathPart = getConstNameForPathPart(path);
-					const mimeType = data.mimeTypes[getExtension(path).toLowerCase()] || data.mimeTypes['default'];
+					const foundMimeType = data.mimeTypes[getExtension(path).toLowerCase()];
+					if (!foundMimeType) console.debug(`Explicit MIME type for '${path}' not found, using default`);
+					const mimeType = foundMimeType || data.mimeTypes['default'];
 					return (`
 	server.on(WEB_${constNamePathPart}_PATH, []() { \\`
 					) + (!options.debugPrints ? '' : (`
