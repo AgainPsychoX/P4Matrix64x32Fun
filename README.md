@@ -56,7 +56,7 @@ EEPROM settings can be set by accessing HTTP `/config` endpoint (GET/POST) and a
 
 #### Page configuration
 
-Each page is configured via binary file at `/pages/0/config` where `0` is page ID/number. Each page can have analog clock and have up to 7 sprites that can be text,  special character, time (formatted as text), image or animation. Exact format is defined in [`page.hpp`](src/page.hpp) file. For example, time-based text sprite that uses `strftime` with custom extensions (`%o` or `%O` for Roman numeral month) can be used to create digital clock and/or display dates.
+Each page is configured via binary file at `/pages/0/config` where `0` is page ID/number. Each page can have analog clock and have up to 7 sprites that can be text,  special character, time (formatted as text), image or animation. Exact format is defined in [`pages.hpp`](src/pages.hpp) file. For example, time-based text sprite that uses `strftime` with custom extensions (`%o` or `%O` for Roman numeral month) can be used to create digital clock and/or display dates.
 
 + All file-system names are lower-case only.
 + Weather types for file names:
@@ -82,7 +82,7 @@ Each page is configured via binary file at `/pages/0/config` where `0` is page I
 
 Bitmaps can be used as assets for backgrounds/animations/sprites. Stored bitmaps should be encoded as simple [BMP file](https://en.wikipedia.org/wiki/BMP_file_format) with standard `BITMAPINFOHEADER`, with 16 bits per pixel (confirm to RGB565 used by the display PxMatrix library; as opposed to default 24 bits), with mask specified, with no compression. The encoding is assured by re-encoding when handling uploads by web server and when [uploading file-system image by PlatformIO](https://docs.platformio.org/en/latest/platforms/espressif8266.html#using-filesystem) `pre` script.
 
-Bitmaps can be symlinked, if the file contains path (content starting with `/` instead `BM` of regular BMP file header). Bitmaps can be used for animations, if so, often frame duration can be specified from inside file by reusing file header reserved fields (`uint16_t` right after file size).
+Bitmaps can be "soft" symlinked, if the file contains path (content starting with `/` instead `BM` of regular BMP file header). Bitmaps can be used for animations, if so, often frame duration can be specified from inside file by reusing file header reserved fields (`uint16_t` right after file size).
 
 
 
@@ -101,7 +101,17 @@ Bitmaps can be symlinked, if the file contains path (content starting with `/` i
 
 ### To-do
 
++ Solve Sprites construction issues
+
 + Implement pages system as described in README above ;)
+	+ Load initial page
+	+ Function to change page
+	+ Schedule next page changes
+	+ Should all time be spent on updating the display? Or some smart subscribing mechanism for temperature/time updates?
+	+ Upload example config & BMP file https://docs.platformio.org/en/latest/platforms/espressif8266.html#using-filesystem
+	+ Debug & test simple image background
+	+ Soft symlinking paths in pages config
+	+ Read frame durations from `Animation` struct
 + Analog clock
 	- Background buffer
 	- Clearing as replacing stuff with buffer

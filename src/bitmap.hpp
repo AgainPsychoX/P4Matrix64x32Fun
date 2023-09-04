@@ -4,9 +4,11 @@
 
 namespace BMP {
 
+static constexpr uint16_t expectedSignature = 0x4D42;
+
 #pragma pack(push, 1)
 struct BITMAPFILEHEADER {
-	uint16_t signature;
+	uint16_t signature = expectedSignature;
 	uint32_t size;
 	uint16_t reserved1;
 	uint16_t reserved2;
@@ -42,16 +44,16 @@ struct rgb888be_t {
 	uint8_t r;
 };
 
+using axis_index_t = int16_t;
+
 /// \brief Coordinates chunked conversion of 24 bit (RGB888) BMP file 
 /// to 16 bit (RGB565) format. 
 class RGB565Converter
 {
-	using foo_t = int16_t;
-
-	foo_t width;
-	foo_t height;
-	foo_t x;
-	foo_t y;
+	axis_index_t width;
+	axis_index_t height;
+	axis_index_t x;
+	axis_index_t y;
 	uint8_t inputRowPadding;
 	uint8_t outputRowPadding;
 	
@@ -84,5 +86,13 @@ public:
 
 	bool finish();
 };
+
+/// \brief Draws BMP stream to the display.
+/// @param file Handle for the open BMP stream (or file).
+/// @param x horizontal axis target (display) position offset
+/// @param y vertical axis target (display) position offset
+/// @param transparentColor transparent color (RGB565), or 0 for no transparency
+/// @return true on success, false otherwise
+bool drawToDisplay(Stream& file, uint8_t targetX, uint8_t targetY, uint16_t transparentColor = 0);
 
 }

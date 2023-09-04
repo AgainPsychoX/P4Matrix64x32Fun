@@ -22,7 +22,7 @@ namespace NTP {
 		if (ntp.update(1000)) {
 			char timeString[24];
 			std::time_t time = std::time({});
-			std::strftime(timeString, sizeof(timeString), "%Y-%m-%dT%H:%M:%SZ", std::gmtime(&time));
+			std::strftime(timeString, sizeof(timeString), "%FT%TZ", std::gmtime(&time));
 			LOG_DEBUG(Time, "Time updated from NTP: %s (UTC)", timeString);
 			
 			uint32_t remainingMillis = static_cast<uint32_t>(ntp.lastResponseMillis) + ntp.millisSinceUpdate(millis());

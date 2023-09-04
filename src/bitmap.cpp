@@ -1,6 +1,18 @@
 #include "bitmap.hpp"
+#define PxMATRIX_double_buffer false
+#include <PxMatrix.h>
+#include <LittleFS.h>
+#include <algorithm> // min, max
+
+extern PxMATRIX display; // from main for drawToDisplay
 
 namespace BMP {
+
+/// Calculates required padding to ceil up to 4.
+template <typename T>
+inline uint8_t paddingToCeil4(T x) {
+	return ((x % 4 > 0) ? (4 - x % 4) : 0);
+}
 
 void RGB565Converter::initialize() {
 	height = 0;
@@ -27,8 +39,8 @@ bool RGB565Converter::chunk(const uint8_t* inputBuffer, size_t inputBufferLength
 		// Get and validate file header
 		BITMAPFILEHEADER fileHeader;
 		std::memcpy(&fileHeader, headersBuffer, sizeof(BITMAPFILEHEADER));
-		if (fileHeader.signature != 0x4D42) {
-			LOG_DEBUG(BMP, "Signature expected");
+		if (fileHeader.signature != BMP::expectedSignature) {
+			LOG_DEBUG(BMP, "Invalid signature");
 			return error = true;
 		}
 
@@ -61,7 +73,7 @@ bool RGB565Converter::chunk(const uint8_t* inputBuffer, size_t inputBufferLength
 				}
 				break;
 			default:
-				LOG_DEBUG(BMP, "24 bits per pixel expected, other not supported");
+				LOG_DEBUG(BMP, "24 bits per pixel expected");
 				return error = true;
 		}
 
@@ -97,15 +109,12 @@ bool RGB565Converter::chunk(const uint8_t* inputBuffer, size_t inputBufferLength
 		output.write(reinterpret_cast<uint8_t*>(&dibHeader), sizeof(dibHeader));
 
 		// Save width & height to be used in pixels converting
-		width = static_cast<foo_t>(dibHeader.width);
-		height = static_cast<foo_t>(dibHeader.height);
+		width = static_cast<axis_index_t>(dibHeader.width);
+		height = static_cast<axis_index_t>(dibHeader.height);
 
 		// Calculate padding (rows need to be aligned to 4 bytes)
-		const auto inputRowLength = width * 3; // 24 bits
-		const auto outputRowLength = width * 2; // 16 bits
-		inputRowPadding = static_cast<uint8_t>((inputRowLength % 4 > 0) ? (4 - inputRowLength % 4) : 0); // align to 4 bytes
-		outputRowPadding = static_cast<uint8_t>((outputRowLength % 4 > 0) ? (4 - outputRowLength % 4) : 0); // align to 4 bytes
-		// const std::string outputRowPaddingString = std::string(outputRowLength, 'A');
+		inputRowPadding = paddingToCeil4(width * 3 /* 24 bits */);
+		outputRowPadding = paddingToCeil4(width * 2 /* 16 bits */);
 	}
 
 	if (sourceBitsPerPixel == 16) {
@@ -203,6 +212,58 @@ bool RGB565Converter::finish() {
 	}
 
 	return error;
+}
+
+bool drawToDisplay(Stream& file, uint8_t targetX, uint8_t targetY, uint16_t transparentColor) {
+	BITMAPFILEHEADER fileHeader;
+	file.read(reinterpret_cast<uint8_t*>(&fileHeader), sizeof(BITMAPFILEHEADER));
+	if (fileHeader.signature != BMP::expectedSignature) {
+		LOG_DEBUG(BMP, "Invalid signature");
+		return false;
+	}
+
+	BITMAPV2INFOHEADER dibHeader;
+	file.read(reinterpret_cast<uint8_t*>(&dibHeader), sizeof(BITMAPV2INFOHEADER));
+	if (dibHeader.headerSize != 40) {
+		LOG_DEBUG(BMP, "Unsupported header");
+		return false;
+	}
+	if (dibHeader.width < 0 || dibHeader.height == 0) {
+		LOG_DEBUG(BMP, "Invalid width or height");
+		return false;
+	}
+	if (dibHeader.height < 0) {
+		LOG_DEBUG(BMP, "Top-to-bottom rows order not supported");
+		return false;
+	}
+	if (dibHeader.bitPerPixel != 16) {
+		LOG_DEBUG(BMP, "16 bits per pixel expected");
+		return false;
+	}
+
+	// Draw pixels (bottom-to-top per BMP standard)
+	const size_t rowLengthInBytes = dibHeader.width * sizeof(uint16_t) + paddingToCeil4(dibHeader.width);
+	uint16_t* rowBuffer = new uint16_t[dibHeader.width + 2 /* account for padding too*/];
+	const auto xLimit = std::min<uint8_t>(targetX + dibHeader.width, display.width());
+	const auto yLimit = std::min<uint8_t>(targetY + dibHeader.height, display.height());
+	for (uint8_t y = dibHeader.height; y > yLimit; y--) {
+		// Skip rows that are always outside the display
+		file.read(reinterpret_cast<uint8_t*>(&rowBuffer), rowLengthInBytes);
+	}
+	display.startWrite();
+	for (int16_t y = yLimit; y > targetY; y--) { // needs to be signed in case targetY = 0
+		file.read(reinterpret_cast<uint8_t*>(&rowBuffer), rowLengthInBytes);
+		for (uint8_t x = 0; x < xLimit; x++) {
+			uint16_t color = *(rowBuffer + x);
+			if (transparentColor && transparentColor == color) {
+				continue;
+			}
+			display.writePixel(targetX + x, y, color);
+		}
+	}
+	display.endWrite();
+
+	return true;
 }
 
 }

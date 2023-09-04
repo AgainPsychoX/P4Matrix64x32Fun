@@ -12,7 +12,7 @@ struct HSL {
 	float h, s, l;
 };
 
-HSL toHSL(float r, float g, float b) {
+constexpr HSL toHSL(float r, float g, float b) {
 	float maxColor = std::max({r, g, b});
 	float minColor = std::min({r, g, b});
 	float h, s, l;
@@ -40,7 +40,7 @@ HSL toHSL(float r, float g, float b) {
 	return {h, s * 100, l * 100};
 }
 
-HSL toHSL(RGB rgb) {
+constexpr HSL toHSL(RGB rgb) {
 	return toHSL(
 		float(rgb.r) / 255, 
 		float(rgb.g) / 255, 
@@ -49,7 +49,7 @@ HSL toHSL(RGB rgb) {
 }
 
 // TODO: test if this is more optimal than toHSL(toRGH(x))
-HSL toHSL(uint16_t rgb565) {
+constexpr HSL toHSL(uint16_t rgb565) {
 	return toHSL(
 		float(rgb565) / 0b1111100000000000,
 		float(rgb565) / 0b0000011111100000,
@@ -58,7 +58,7 @@ HSL toHSL(uint16_t rgb565) {
 }
 
 namespace {
-	float hue2RGB(float p, float q, float t) {
+	constexpr float hue2RGB(float p, float q, float t) {
 		if (t < 0.0) t += 1.0;
 		if (t > 1.0) t -= 1.0;
 		if (t < 1.0 / 6.0) return p + (q - p) * 6.0 * t;
@@ -68,7 +68,7 @@ namespace {
 	}
 }
 
-RGB toRGB(HSL hsl) {
+constexpr RGB toRGB(HSL hsl) {
 	float h_ = hsl.h / 360;
 	float s_ = hsl.s / 100;
 	float l_ = hsl.l / 100;
@@ -87,7 +87,7 @@ RGB toRGB(HSL hsl) {
 	};
 }
 
-inline RGB toRGB(uint16_t rgb565) {
+constexpr inline RGB toRGB(uint16_t rgb565) {
 	return {
 		static_cast<uint8_t>((rgb565 & 0b1111100000000000) >> 8), // r
 		static_cast<uint8_t>((rgb565 & 0b0000011111100000) >> 3), // g
@@ -95,11 +95,11 @@ inline RGB toRGB(uint16_t rgb565) {
 	};
 }
 
-inline uint16_t to565(RGB rgb) {
+constexpr inline uint16_t to565(RGB rgb) {
 	return ((rgb.r & 0b11111000) << 8) | ((rgb.g & 0b11111100) << 3) | (rgb.b >> 3);
 }
 
-RGB interpolateRGB(const RGB& a, const RGB& b, float ratio) {
+constexpr RGB interpolateRGB(const RGB& a, const RGB& b, float ratio) {
 	return {
 		static_cast<uint8_t>(a.r + (b.r - a.r) * ratio),
 		static_cast<uint8_t>(a.g + (b.g - a.g) * ratio),
@@ -107,12 +107,15 @@ RGB interpolateRGB(const RGB& a, const RGB& b, float ratio) {
 	};
 }
 
-HSL interpolateHSL(const HSL& a, const HSL& b, float ratio) {
+constexpr HSL interpolateHSL(const HSL& a, const HSL& b, float ratio) {
 	return {
 		a.h + (b.h - a.h) * ratio,
 		a.s + (b.s - a.s) * ratio,
 		a.l + (b.l - a.l) * ratio,
 	};
 }
+
+constexpr RGB white {255, 255, 255};
+constexpr RGB black {0, 0, 0};
 
 }

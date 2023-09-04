@@ -11,6 +11,9 @@ static_assert(sizeof(int*) == 4,
 	"If you are using VS Code, see https://github.com/platformio/platformio-vscode-ide/issues/3284 related issues. "
 );
 
+/// Type for number of milliseconds across Arduino functions like `millis()` or `delay(ms)`
+using millis_t = decltype(millis()); 
+
 #include "utils.hpp"
 
 #define LEVEL_NONE  0
@@ -19,9 +22,6 @@ static_assert(sizeof(int*) == 4,
 #define LEVEL_INFO  3
 #define LEVEL_DEBUG 4
 #define LEVEL_TRACE 5
-
-#define STRINGIFY_DETAIL(x) #x
-#define STRINGIFY(x) STRINGIFY_DETAIL(x)
 
 // FNV1a 32 (source: https://gist.github.com/Lee-R/3839813, license: Public Domain)
 constexpr uint32_t fnv1a_32_recursive(const char* const s, size_t count) {

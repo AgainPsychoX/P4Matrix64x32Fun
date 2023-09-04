@@ -35,9 +35,9 @@ struct BITMAPV2INFOHEADER : BITMAPINFOHEADER {
 };
 #pragma pack(pop)
 
-int main() {
-	std::ifstream input("input.bmp", std::ios::binary);
-	std::ofstream output("output.bmp", std::ios::binary);
+int main(int argc, char* argv[]) {
+	std::ifstream input(argc > 1 ? argv[1] : "input.bmp", std::ios::binary);
+	std::ofstream output(argc > 2 ? argv[2] : "output.bmp", std::ios::binary);
 
 	if (!input.is_open() || !output.is_open()) {
 		std::cerr << "Error opening files." << std::endl;

@@ -1,11 +1,19 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
+#include <string>
 #include <string_view>
+
+#define STRINGIFY_DETAIL(x) #x
+#define STRINGIFY(x) STRINGIFY_DETAIL(x)
 
 #define CONCATENATE_DIRECT(X, Y) X##Y
 #define CONCATENATE(X, Y) CONCATENATE_DIRECT(X, Y)
 #define ANONYMOUS_VARIABLE(str) CONCATENATE(str, __LINE__)
+
+#define STRUCT_PADDING_BYTES(size) private: uint8_t ANONYMOUS_VARIABLE(_pad_)[size]; public:
+#define STRUCT_PADDING_BITS(size) private: uint8_t ANONYMOUS_VARIABLE(_pad_) : size; public:
 
 // Utils to help printf as binary
 #define BYTE_TO_BINARY_PATTERN "%c%c%c%c%c%c%c%c"

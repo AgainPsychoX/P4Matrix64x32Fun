@@ -1,5 +1,6 @@
 {
 	"cSpell.words": [
+		"Adafruit",
 		"authmode",
 		"BITMAPCOREHEADER",
 		"BITMAPFILEHEADER",
@@ -12,7 +13,9 @@
 		"dhcps",
 		"FPSTR",
 		"INFOHEADER",
+		"lstdc",
 		"opmode",
+		"Picopixel",
 		"setlocale",
 		"setserver",
 		"SNTP",
@@ -69,6 +72,8 @@
 		"streambuf": "cpp",
 		"cinttypes": "cpp",
 		"typeinfo": "cpp",
-		"iostream": "cpp"
+		"iostream": "cpp",
+		"fstream": "cpp",
+		"istream": "cpp"
 	}
 }

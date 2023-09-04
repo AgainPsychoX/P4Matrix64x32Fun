@@ -8,7 +8,9 @@
 #include <LittleFS.h>
 #include "Network.hpp"
 #include "NTP.hpp"
-#include "pages.hpp"
+#include "pages/Page.hpp"
+#include "pages/Animation.hpp"
+#include "pages/RequestHandler.hpp"
 #include "webEncoded/WebStaticContent.hpp"
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -28,19 +30,346 @@
 
 Ticker displayTicker;
 PxMATRIX display(MATRIX_WIDTH, MATRIX_HEIGHT, P_LAT, P_OE, P_A, P_B, P_C, P_D);
+#define TEST_COLORS_ON_START 0
 
 ////////////////////////////////////////////////////////////////////////////////
 
 Settings* settings;
 ESP8266WebServer webServer(80);
 bool showIP = true;
-constexpr unsigned int showIPtimeout = 20000;
+constexpr millis_t showIPtimeout = 20000;
 
 ////////////////////////////////////////////////////////////////////////////////
 
 OneWire oneWire;
 DallasTemperature oneWireThermometers(&oneWire);
 float temperature = 0; // avg of last and current read (simplest noise reduction)
+
+////////////////////////////////////////////////////////////////////////////////
+
+const GFXfont* fontById(uint8_t font) {
+	switch (font) {
+		// case 1:  return &FreeMono9pt7b;
+		// case 2:  return &FreeMono12pt7b;
+		// case 3:  return &FreeMonoBold9pt7b;
+		// case 4:  return &FreeMonoBold12pt7b;
+		// case 5:  return &FreeSans9pt7b;
+		// case 6:  return &FreeSans12pt7b;
+		// case 7:  return &FreeSansBold9pt7b;
+		// case 8:  return &FreeSansBold12pt7b;
+		// case 9:  return &FreeSerif9pt7b;
+		// case 10: return &FreeSerif12pt7b;
+		// case 11: return &FreeSerifBold9pt7b;
+		case 12: return &FreeSerifBold12pt7b;
+		// case 13: return &Picopixel
+		// case 14: return &Org_01
+		// case 15: return &TomThumb
+		default: return nullptr; // default 6x8 font will be used
+	}
+}
+
+// TODO: refactor/encapsulate stuff into pages manager of some sort?
+pages::Page activePage;
+millis_t lastPageChange;
+
+millis_t lastBackgroundFrame;
+millis_t lastSpriteFrame[pages::Page::maxSprites];
+uint8_t backgroundFrameIndex;
+uint8_t spriteFrameIndex[pages::Page::maxSprites];
+
+/// Setups default active page, most likely used in case the first page fails to load
+inline void prepareDefaultActivePage() {
+	using namespace pages;
+	activePage.backgroundColors.setPrimary(colors::to565(colors::RGB {38, 13, 30}));
+	activePage.sprites[0].common.type = Sprite::Type::Text;
+	activePage.sprites[0].common.x = 7;
+	activePage.sprites[0].common.y = 7;
+	activePage.sprites[0].text.color = colors::to565(colors::white);
+	activePage.sprites[0].text.font = 0; // default font
+	activePage.sprites[0].text.setText("FS FAIL?");
+}
+
+void changeActivePage(uint8_t id) {
+	activePage.loadById(id);
+	lastPageChange = millis();
+}
+
+void substitutePathVariables(char* output, const char* raw) {
+	for (const char* fp = raw; *fp; fp++) {
+		if (*fp == '$') {
+			fp++;
+			switch (*fp) {
+				case 'M': /* month*/ {
+					char buffer[16];
+					std::time_t time = std::time({});
+					std::strftime(buffer, sizeof(buffer), "%B", std::localtime(&time));
+					buffer[0] += ('a' - 'A');
+					const char* vp = buffer;
+					while (*vp) *output++ = *vp++;
+					break;
+				}
+				case 'S': /* season */ {
+					std::time_t time = std::time({});
+					int m = std::localtime(&time)->tm_mon;
+					const char* vp = "winter";
+					if (m > 1) {
+						/**/ if (m < 5) vp = "spring";
+						else if (m < 8) vp = "summer";
+						else if (m < 11) vp = "fall";
+					}
+					while (*vp) *output++ = *vp++;
+					break;
+				}
+				case 'W': /* weather */ {
+					// TODO: weather (also consider how to express future weather)
+					const char* vp = "sunny";
+					while (*vp) *output++ = *vp++;
+					break;
+				}
+				default:
+					*output = *fp;
+					LOG_WARN(Pages, "Unknown path variable $%c", *fp);
+					break; // will fail to find the file most likely
+			}
+		}
+	}
+	*output = 0;
+	// TODO: improve safety?
+}
+
+/// \brief Selects current frame for raw path, by substituting path variables 
+/// and resolving actual path (necessary if `Animation` struct file path
+/// or directory path provided). Frame index can be modified incremented,
+/// looping over max frames found (via anim/dir) if `goNextFrame` is true.
+/// \param rawPath raw path (can contain vars to replace) points to BMP file
+/// for still image, or `Animation` struct file or directory for dynamic
+/// \param frameIndex (reference) current (valid) frame index of the animation
+/// \param goNextFrame whenever the frame index should be pre-incremented 
+/// and next frame image file fetched.
+/// \return File for current frame (if found), should fail when cast to boolean on error
+File selectCurrentFrameForFile(const char* rawPath, uint8_t& frameIndex, bool goNextFrame) {
+	using namespace pages;
+	char basePath[24];
+	substitutePathVariables(basePath, rawPath);
+
+	File file = LittleFS.open(basePath, "r");
+	if (!file) {
+		LOG_DEBUG(Pages, "Failed to open base path '%s'", basePath);
+		return file;
+	}
+	if (file.isFile()) {
+		uint16_t signature;
+		file.read(reinterpret_cast<uint8_t*>(&signature), sizeof(signature));
+		switch (signature) {
+			case BMP::expectedSignature:
+				// Return the found BMP directly, effectively there is no other frames,
+				// even if there are other (even numbered) BMP files in the same directory.
+				return file;
+			case Animation::expectedSignature: {
+				Animation animation;
+				file.read(reinterpret_cast<uint8_t*>(&animation), sizeof(animation));
+				
+				if (goNextFrame) {
+					while (animation.frames[frameIndex].path[0]) {
+						if (frameIndex++ >= Animation::maxFrames) {
+							frameIndex = 0;
+							break;
+						}
+					}
+				}
+
+				const char* actualPath = animation.frames[frameIndex].path;
+
+				file.close();
+				file = LittleFS.open(actualPath, "r");
+				if (!file) {
+					LOG_DEBUG(Pages, "Failed to open '%s'", actualPath);
+				}
+				return file;
+			}
+			default:
+				LOG_ERROR(Pages, "Invalid signature");
+				return File(); // so it evaluates to false on boolean operator
+		}
+	}
+	else /* directory */ {
+		char actualPath[32];
+		snprintf(
+			actualPath, sizeof(actualPath), "%s/%u.bmp", 
+			basePath,
+			frameIndex + (goNextFrame ? 1 : 0)
+		);
+
+		if (LittleFS.exists(actualPath)) {
+			frameIndex += (goNextFrame ? 1 : 0);
+		}
+		else {
+			if (goNextFrame) 
+				frameIndex = 0;
+			snprintf(
+				actualPath, sizeof(actualPath), "%s/0.bmp", 
+				basePath
+			);
+		}
+		LOG_TRACE(Pages, "frameIndex=%u", frameIndex);
+
+		file.close();
+		file = LittleFS.open(actualPath, "r");
+		if (!file) {
+			LOG_DEBUG(Pages, "Failed to open '%s'", actualPath);
+		}
+
+		return file;
+	}
+}
+
+void updatePagesStuff() {
+	using namespace pages;
+	millis_t currentMillis = millis();
+
+	// Going to next pages
+	if (activePage.hasNextPage()) {
+		const auto durationFromLast = static_cast<uint16_t>(currentMillis - lastPageChange);
+		if (durationFromLast >= activePage.duration) {
+			changeActivePage(activePage.next);
+		}
+	}
+
+	// Background
+	bool goNextBackground = false;
+	if (activePage.backgroundDuration != 0) {
+		const auto durationFromLast = static_cast<uint16_t>(currentMillis - lastBackgroundFrame);
+		if (durationFromLast >= activePage.backgroundDuration) {
+			lastBackgroundFrame = currentMillis;
+			goNextBackground = true;
+		}
+	}
+	if (not activePage.usesBackgroundFromFile()) {
+		display.fillScreen(activePage.backgroundColors.primary);
+	}
+	else /* image(s) used */ {
+		LOG_TRACE(Pages, "Background:");
+		File file = selectCurrentFrameForFile(
+			activePage.backgroundPath, 
+			backgroundFrameIndex,
+			goNextBackground
+		);
+		if (file) {
+			BMP::drawToDisplay(file, 0, 0);
+			file.close();
+		}
+		else {
+			// TODO: error once?
+			LOG_ERROR(Pages, "Failed to select frame");
+		}
+	}
+
+	// Sprites
+	for (uint8_t i = 0; i < Page::maxSprites; i++) {
+		const auto& sprite = activePage.sprites[i];
+		if (sprite.common.type == Sprite::Type::None) {
+			continue;
+		}
+		LOG_TRACE(Pages, "Sprite %u. type=%u x=%u y=%u", i, sprite.common.type, sprite.common.x, sprite.common.y);
+
+		// TODO: maybe rewrite it more object oriented way? 
+		//  Having sprites/background class have display method.
+		switch (sprite.common.type) {
+			case Sprite::Type::None:
+				// Skip not used sprites
+				break;
+			case Sprite::Type::Text:
+				display.setFont(fontById(sprite.text.font));
+				display.setTextColor(sprite.text.color);
+				display.setCursor(sprite.common.x, sprite.common.y);
+				display.print(sprite.text.text);
+				// TODO: dot size
+				break;
+			case Sprite::Type::Time: {
+				display.setFont(fontById(sprite.time.font));
+				display.setTextColor(sprite.time.color);
+				display.setCursor(sprite.common.x, sprite.common.y);
+
+				char buffer[32];
+				std::time_t time = std::time({});
+				std::tm* tm = sprite.time.useUTC ? std::gmtime(&time) : std::localtime(&time);
+				std::strftime(buffer, sizeof(buffer), sprite.time.format, tm);
+				
+				display.print(buffer);
+				// TODO: dot size, colon fix, blinking colons
+				break;
+			}
+			case Sprite::Type::Temperature: {
+				display.setFont(fontById(sprite.temperature.font));
+				display.setCursor(sprite.common.x, sprite.common.y);
+
+				char buffer[16];
+				sprintf(buffer, "%*.f", sprite.temperature.precision, temperature);
+				// TODO: other temperature sources
+				// TODO: ...
+
+				display.print(buffer);
+				// TODO: dot size, degree size, blinking colons
+				// TODO: degree size
+
+				break;
+			}
+			case Sprite::Type::Image: 
+			case Sprite::Type::Animation: {
+				bool goNextFrame = false;
+				if (sprite.file.frameDuration != 0) {
+					const auto durationFromLast = static_cast<uint16_t>(currentMillis - lastSpriteFrame[i]);
+					if (durationFromLast >= sprite.file.frameDuration) {
+						lastSpriteFrame[i] = currentMillis;
+						goNextFrame = true;
+					}
+				}
+				// TODO: use frame duration from animation file if present
+
+				File file = selectCurrentFrameForFile(
+					activePage.backgroundPath, 
+					spriteFrameIndex[i],
+					goNextFrame
+				);
+				if (file) {
+					BMP::drawToDisplay(file, sprite.common.x, sprite.common.y, sprite.file.transparentColor);
+					file.close();
+				}
+				else {
+					// TODO: error once?
+					LOG_ERROR(Pages, "Failed to select frame");
+				}
+
+				break;
+			}
+			case Sprite::Type::CustomChar: 
+				const auto xLimit = sprite.common.x + sprite.customChar.width;
+				const auto yLimit = sprite.common.y + sprite.customChar.height();
+				uint8_t i = 0;
+				uint8_t mask = 1;
+				display.startWrite();
+				for (uint8_t y = sprite.common.y; y < yLimit; y++) {
+					for (uint8_t x = sprite.common.x; x < xLimit; x++) {
+						if (sprite.customChar.data[i] & mask) {
+							display.writePixel(x, y, sprite.customChar.color);
+						}
+						mask <<= 1;
+						if (!mask) {
+							i += 1;
+							mask = 1;
+						}
+					}
+				}
+				display.endWrite();
+				break;
+		}
+	}
+
+	// Analog clock
+	{
+		// TODO: analog clock
+	}
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -118,6 +447,10 @@ void setup() {
 	// LittleFS.setConfig(LittleFSConfig(/*autoFormat=*/ false));
 	LittleFS.begin();
 
+	// Initialize pages system
+	prepareDefaultActivePage();
+	changeActivePage(0);
+
 	// Register server handlers
 	webServer.on(F("/"), []() {
 		WEB_USE_CACHE_STATIC(webServer);
@@ -143,7 +476,7 @@ void setup() {
 			temperature,
 			timeString,
 			WiFi.RSSI()
-		);
+		); // not `snprintf_P` for better performance
 		if (ret < 0 || static_cast<unsigned int>(ret) >= bufferLength) {
 			webServer.send(500, WEB_CONTENT_TYPE_TEXT_HTML, F("Response buffer exceeded"));
 		}
@@ -218,7 +551,7 @@ void setup() {
 		});
 	}
 
-	webServer.addHandler(&PageConfiguration::requestHandler);
+	webServer.addHandler(&pages::requestHandler);
 
 	webServer.onNotFound([]() {
 		webServer.send(404, WEB_CONTENT_TYPE_TEXT_PLAIN, PSTR("Not found\n\n"));
@@ -230,13 +563,13 @@ void setup() {
 
 #define UPDATE_EVERY(interval)          \
 	for(                                \
-		static unsigned long prev = 0;  \
+		static millis_t prev = 0;       \
 		currentMillis - prev > interval;\
 		currentMillis = prev = millis() \
 	)
 
 void loop() {
-	unsigned long currentMillis = millis();
+	millis_t currentMillis = millis();
 
 	webServer.handleClient();
 
@@ -246,7 +579,7 @@ void loop() {
 		NTP::update();
 	}
 
-	// Update and display thermometer
+	// Update thermometer
 	if (oneWireThermometers.isConversionComplete()) {
 		// Update thermometer read
 		float t = oneWireThermometers.getTempCByIndex(0);
@@ -255,54 +588,7 @@ void loop() {
 		}
 
 		oneWireThermometers.requestTemperatures();
-
-		// Display temperature 
-		{
-			char buffer[16];
-			display.fillRect(0, 24, 64, 8, display.color565(0, 0, 0));
-			display.setFont(nullptr); // back to built-in 6x8
-			uint16_t color = colors::to565(colorForTemperature(temperature));
-			display.setTextColor(color);
-			sprintf(buffer, "%.1f", temperature);
-			size_t i = 1;
-			while (buffer[i++] != '.'); // find char after dot
-			buffer[i - 1] = 0;
-			display.setCursor(0, 25);
-			display.print(buffer);
-			display.fillRect(display.getCursorX(), 25 + 5, 2, 2, color);
-			display.setCursor(display.getCursorX() + 3, 25);
-			display.print(buffer + i);
-			display.drawPixel(display.getCursorX(),     25 + 1, color);
-			display.drawPixel(display.getCursorX() + 2, 25 + 1, color);
-			display.drawPixel(display.getCursorX() + 1, 25,     color);
-			display.drawPixel(display.getCursorX() + 1, 25 + 2, color);
-			display.setCursor(display.getCursorX() + 4, 25);
-			display.print('C');
-		}
 	}
 
-	// Display digital clock
-	UPDATE_EVERY(1000) {
-		char buffer[16];
-		std::time_t time = std::time({});
-		std::strftime(std::data(buffer), std::size(buffer), "%T", std::localtime(&time));
-		buffer[2] = 0;
-		buffer[5] = 0;
-
-		display.setFont(&FreeSerifBold12pt7b);
-		display.setTextColor(display.color565(0, 0, 255));
-		display.fillRect(0, 0, 64, 24, display.color565(0, 0, 0));
-
-		display.setCursor(0, 0 + 15); 
-		display.print(buffer + 0); // hours
-
-		if (currentMillis % 2000 > 1000) {
-			display.setCursor(23, 0 + 15); 
-			display.print(':');
-		}
-
-		display.setCursor(30, 0 + 15); 
-		display.print(buffer + 3); // minutes
-		// display.print(buffer + 6); // seconds
-	}
+	updatePagesStuff();
 }

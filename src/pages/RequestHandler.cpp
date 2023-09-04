@@ -1,34 +1,8 @@
-#include "pages.hpp"
+#include "RequestHandler.hpp"
 #include <LittleFS.h>
 #include <ctime>
-#include <string>
-#include "colors.hpp"
 
-namespace PageConfiguration { 
-
-uint16_t Sprite::Temperature::interpolateColor(float temperature) {
-	using namespace colors;
-
-	if (temperature <= referenceTemperatures[0]) {
-		return referenceTemperatures[0]; // first color
-	}
-
-	for (uint8_t i = 1; i < 4; i++) {
-		auto const& previousTemperature = referenceTemperatures[i - 1];
-		auto const& previousColor = targetColors[i - 1];
-		auto const& currentTemperature = referenceTemperatures[i];
-		auto const& currentColor = targetColors[i];
-
-		if (temperature <= currentTemperature) {
-			float ratio = (temperature - previousTemperature) 
-				/ (currentTemperature - previousTemperature);
-			return to565(toRGB(interpolateHSL(
-				toHSL(previousColor), toHSL(currentColor), ratio)));
-		}
-	}
-
-	return targetColors[3]; // last color 
-}
+namespace pages {
 
 String getContentType(const char* name) {
 	using mime::mimeTable; // from ESP8266WebServer
@@ -187,13 +161,13 @@ void RequestHandler::upload(ESP8266WebServer& server, const String& uri, HTTPUpl
 			else if (upload.type.equalsIgnoreCase(FPSTR(WEB_CONTENT_TYPE_APPLICATION_OCTET_STREAM)))
 				processingType = ProcessingType::Configuration;
 			else {
-				LOG_DEBUG(Pages, "Invalid content type");
+				LOG_DEBUG(pages, "Invalid content type");
 				errorCode = 415;
 				return;
 			}
 
 			if (upload.contentLength > 1024 * 6) {
-				LOG_DEBUG(Pages, "Too large");
+				LOG_DEBUG(pages, "Too large");
 				errorCode = 413;
 				return;
 			}
@@ -208,10 +182,10 @@ void RequestHandler::upload(ESP8266WebServer& server, const String& uri, HTTPUpl
 						}
 						path.append(server.upload().filename.c_str(), server.upload().filename.length());
 
-						LOG_DEBUG(Pages, "Adding to the directory");
+						LOG_DEBUG(pages, "Adding to the directory");
 					}
 					else /* file */ {
-						LOG_DEBUG(Pages, "Overwriting existing file");
+						LOG_DEBUG(pages, "Overwriting existing file");
 					}
 				}
 				else /* could not open */ {
@@ -224,7 +198,7 @@ void RequestHandler::upload(ESP8266WebServer& server, const String& uri, HTTPUpl
 				// path = uri;
 			}
 
-			LOG_DEBUG(Pages, "Opening '%s' for saving", path.c_str());
+			LOG_DEBUG(pages, "Opening '%s' for saving", path.c_str());
 			uploadedFile = LittleFS.open(path.c_str(), "w");
 
 			if (processingType == ProcessingType::Bitmap) {
@@ -234,7 +208,7 @@ void RequestHandler::upload(ESP8266WebServer& server, const String& uri, HTTPUpl
 			break;
 		}
 		case UPLOAD_FILE_WRITE: {
-			LOG_DEBUG(Pages, "Processing upload");
+			LOG_DEBUG(pages, "Processing upload");
 
 			if (processingType == ProcessingType::Bitmap) {
 				bitmapProcessor.chunk(upload.buf, upload.currentSize, uploadedFile);
@@ -253,7 +227,7 @@ void RequestHandler::upload(ESP8266WebServer& server, const String& uri, HTTPUpl
 			uploadedFile.close();
 			uploadedFilesCount += 1;
 
-			LOG_DEBUG(Pages, "Upload saved");
+			LOG_DEBUG(pages, "Upload saved");
 			break;
 		}
 		case UPLOAD_FILE_ABORTED: {
@@ -262,7 +236,7 @@ void RequestHandler::upload(ESP8266WebServer& server, const String& uri, HTTPUpl
 			uploadedFile.close();
 			LittleFS.remove(path.c_str());
 			
-			LOG_DEBUG(Pages, "Upload aborted");
+			LOG_DEBUG(pages, "Upload aborted");
 			break;
 		}
 	}
