@@ -23,14 +23,16 @@ void RGB565Converter::initialize() {
 }
 
 bool RGB565Converter::chunk(const uint8_t* inputBuffer, size_t inputBufferLength, Stream& output) {
-	if (error) return error;
+	if (error) [[unlikely]] {
+		return error;
+	}
 
 	const uint8_t* inputPosition = inputBuffer;
 	const uint8_t* const inputEnd = inputBuffer + inputBufferLength;
 
 	if (!areHeadersProcessed()) {
 		const uint8_t* headersBuffer = inputBuffer;
-		if (inputBufferLength < sizeof(BITMAPFILEHEADER) + sizeof(BITMAPV2INFOHEADER)) {
+		if (inputBufferLength < sizeof(BITMAPFILEHEADER) + sizeof(BITMAPV2INFOHEADER)) [[unlikely]] {
 			LOG_DEBUG(BMP, "First chunk should contain full headers");
 			return error = true;
 			// TODO: use local buffer, and fill it till we have the headers ready
@@ -39,7 +41,7 @@ bool RGB565Converter::chunk(const uint8_t* inputBuffer, size_t inputBufferLength
 		// Get and validate file header
 		BITMAPFILEHEADER fileHeader;
 		std::memcpy(&fileHeader, headersBuffer, sizeof(BITMAPFILEHEADER));
-		if (fileHeader.signature != BMP::expectedSignature) {
+		if (fileHeader.signature != BMP::expectedSignature) [[unlikely]] {
 			LOG_DEBUG(BMP, "Invalid signature: got 0x%04x expected '");
 			return error = true;
 		}
@@ -49,15 +51,15 @@ bool RGB565Converter::chunk(const uint8_t* inputBuffer, size_t inputBufferLength
 		auto& headerSize = dibHeader.headerSize;
 		headerSize = *reinterpret_cast<const uint32_t*>(headersBuffer);
 		std::memcpy(&dibHeader, headersBuffer + sizeof(BITMAPFILEHEADER), static_cast<size_t>(headerSize));
-		if (dibHeader.headerSize != 40) {
+		if (dibHeader.headerSize != 40) [[unlikely]] {
 			LOG_DEBUG(BMP, "Unsupported header");
 			return error = true;
 		}
-		if (dibHeader.width <= 0 || dibHeader.height == 0) {
+		if (dibHeader.width <= 0 || dibHeader.height == 0) [[unlikely]] {
 			LOG_DEBUG(BMP, "Invalid width or height");
 			return error = true;
 		}
-		if (dibHeader.height < 0) {
+		if (dibHeader.height < 0) [[unlikely]] {
 			LOG_DEBUG(BMP, "Top-to-bottom rows order not supported");
 			return error = true;
 		}
@@ -205,7 +207,7 @@ bool RGB565Converter::chunk(const uint8_t* inputBuffer, size_t inputBufferLength
 bool RGB565Converter::finish() {
 	if (error) return error;
 
-	if (x != width || y != height || leftoverType == Pixel) {
+	if (x != width || y != height || leftoverType == Pixel) [[unlikely]] {
 		LOG_DEBUG(BMP, "Unexpected end");
 		// TODO: fill remaining pixels with zero to allow soft-error?
 		return error = true;
@@ -215,44 +217,51 @@ bool RGB565Converter::finish() {
 }
 
 bool drawToDisplay(Stream& file, uint8_t targetX, uint8_t targetY, uint16_t transparentColor) {
-	BITMAPFILEHEADER fileHeader;
-	file.read(reinterpret_cast<uint8_t*>(&fileHeader), sizeof(BITMAPFILEHEADER));
-	if (fileHeader.signature != BMP::expectedSignature) {
+	// TODO: instead dynamic allocation, consider pre-allocating
+	// TODO: consider caching image data instead reading the file again and again? 
+	//	(layer above, maybe hashing file path; maybe some cache management system?)
+
+	// Read and validate headers
+	struct {
+		BITMAPFILEHEADER fileHeader;
+		BITMAPV2INFOHEADER dibHeader;
+	} headers;
+	int ret = file.read(reinterpret_cast<uint8_t*>(&headers), sizeof(headers));
+	if (ret != sizeof(headers)) [[unlikely]] {
+		LOG_DEBUG(BMP, "Header too short");
+		return false;
+	}
+	if (headers.fileHeader.signature != BMP::expectedSignature) [[unlikely]] {
 		LOG_DEBUG(BMP, "Invalid signature");
 		return false;
 	}
-	// TODO: join headers reads
-	// TODO: check read/file size in debug mode?
-
-	BITMAPV2INFOHEADER dibHeader;
-	file.read(reinterpret_cast<uint8_t*>(&dibHeader), sizeof(BITMAPV2INFOHEADER));
-	if (dibHeader.headerSize != 40) {
+	if (headers.dibHeader.headerSize != 40) [[unlikely]] {
 		LOG_DEBUG(BMP, "Unsupported header");
 		return false;
 	}
-	if (dibHeader.width <= 0 || dibHeader.height == 0) {
+	if (headers.dibHeader.width <= 0 || headers.dibHeader.height == 0) [[unlikely]] {
 		LOG_DEBUG(BMP, "Invalid width or height");
 		return false;
 	}
-	if (dibHeader.height < 0) {
+	if (headers.dibHeader.height < 0) [[unlikely]] {
 		LOG_DEBUG(BMP, "Top-to-bottom rows order not supported");
 		return false;
 	}
-	if (dibHeader.bitPerPixel != 16) {
+	if (headers.dibHeader.bitPerPixel != 16) [[unlikely]] {
 		LOG_DEBUG(BMP, "16 bits per pixel expected");
 		return false;
 	}
 
 	// Draw pixels (bottom-to-top per BMP standard)
-	LOG_TRACE(BMP, "dibHeader.width=%u dibHeader.height=%u", 
-		dibHeader.width, dibHeader.height);
-	const size_t rowLengthInBytes = dibHeader.width * sizeof(uint16_t) + paddingToCeil4(dibHeader.width);
-	uint16_t* rowBuffer = new uint16_t[dibHeader.width + 2 /* account for up to 4 bytes padding */];
-	const auto xLimit = std::min<uint8_t>(targetX + dibHeader.width, display.width());
-	const auto yLimit = std::min<uint8_t>(targetY + dibHeader.height, display.height());
-	LOG_TRACE(BMP, "rowLengthInBytes=%u targetX=%u targetY=%u xLimit=%u yLimit=%u rowBuffer=%p", 
-		rowLengthInBytes, targetX, targetY, xLimit, yLimit, rowBuffer);
-	for (uint8_t y = dibHeader.height; y > yLimit; y--) {
+	const auto& width = headers.dibHeader.width;
+	const auto& height = headers.dibHeader.height;
+	const size_t rowLengthInBytes = width * sizeof(uint16_t) + paddingToCeil4(width);
+	uint16_t* rowBuffer = new uint16_t[width + 2 /* account for up to 4 bytes padding */];
+	const auto xLimit = std::min<uint8_t>(targetX + width, display.width());
+	const auto yLimit = std::min<uint8_t>(targetY + height, display.height());
+	LOG_TRACE(BMP, "width=%u height=%u rowLengthInBytes=%u targetX=%u targetY=%u xLimit=%u yLimit=%u rowBuffer=%p", 
+		width, height, rowLengthInBytes, targetX, targetY, xLimit, yLimit, rowBuffer);
+	for (uint8_t y = height; y > yLimit; y--) {
 		// Skip rows that are always outside the display
 		file.read(reinterpret_cast<uint8_t*>(rowBuffer), rowLengthInBytes);
 	}
@@ -261,14 +270,13 @@ bool drawToDisplay(Stream& file, uint8_t targetX, uint8_t targetY, uint16_t tran
 		file.read(reinterpret_cast<uint8_t*>(rowBuffer), rowLengthInBytes);
 		for (uint8_t x = 0; x < xLimit; x++) {
 			uint16_t color = *(rowBuffer + x);
-			if (transparentColor && transparentColor == color) {
+			if (transparentColor && transparentColor == color) [[unlikely]] {
 				continue;
 			}
 			display.writePixel(targetX + x, y, color);
 		}
 	}
 	display.endWrite();
-
 	free(rowBuffer);
 
 	return true;
