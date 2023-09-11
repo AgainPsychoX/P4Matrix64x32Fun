@@ -7,23 +7,22 @@
 
 namespace pages {
 
-struct Sprite {
+union Sprite {
 	enum class Type : uint8_t {
 		None,       // sprite not used
 		Text,       // simple text
 		Time,       // uses std::strftime with custom extensions with local time
 		Temperature,// uses temperature info (local or online)
-		Image,      // includes path to BMP file
-		Animation,  // uses multiple BMP files
+		Image,      // includes path to BMP or animation file
 		CustomChar, // allows for custom characters (1-bit image)
 	};
 
 	struct Common {
 		STRUCT_PADDING_BYTES(24 - 2 - 1);
 		Sprite::Type type = Sprite::Type::None;
-		uint8_t x = 0;
-		uint8_t y = 0;
-	};
+		uint8_t x;
+		uint8_t y;
+	} common;
 	static_assert(sizeof(Common) == 24);
 
 	// Text sprite properties
@@ -35,11 +34,14 @@ struct Sprite {
 		}
 
 		uint16_t color = colors::to565(colors::white);
-		uint8_t font : 4 = 0;
+		uint8_t font : 4 = 0; // default 6x8
 		uint8_t dotSize : 2 = 0; // 0 for font-based (monospace!)
 		STRUCT_PADDING_BITS(2);
-		STRUCT_PADDING_BYTES(3); // type & x, y
-	};
+
+		Sprite::Type type = Sprite::Type::Text;
+		uint8_t x;
+		uint8_t y;
+	} text;
 	static_assert(sizeof(Text) == 24);
 
 	// Time-based text sprite properties
@@ -64,8 +66,10 @@ struct Sprite {
 		uint8_t dotSize : 2 = 0; // 0 for font-based (monospace!)
 		STRUCT_PADDING_BITS(2);
 
-		STRUCT_PADDING_BYTES(3); // type & x, y
-	};
+		Sprite::Type type = Sprite::Type::Time;
+		uint8_t x;
+		uint8_t y;
+	} time;
 	static_assert(sizeof(Time) == 24);
 
 	// Temperature-based text sprite properties (format is always "%.*f")
@@ -115,7 +119,7 @@ struct Sprite {
 		}
 
 		bool showUnit : 1 = true;
-		bool showDegree : 1 = true; // needs showUnit to be true too
+		bool showDegree : 1 = true;
 		Unit unit : 2 = Celsius;
 		uint8_t precision : 2 = 1;
 		STRUCT_PADDING_BITS(2);
@@ -128,14 +132,16 @@ struct Sprite {
 		uint8_t dotSize : 2 = 0; // 0 for font-based (monospace!)
 		uint8_t degreeSize : 2 = 0; // 0 for font-based (monospace!) as single quote
 
-		STRUCT_PADDING_BYTES(3); // type & x, y
+		Sprite::Type type = Sprite::Type::Temperature;
+		uint8_t x;
+		uint8_t y;
 
 		uint16_t interpolateColor(float temperature);
-	};
+	} temperature;
 	static_assert(sizeof(Temperature) == 24);
 
 	// Image/animation sprite properties
-	struct File {
+	struct Image {
 		char path[16];
 		inline void setPath(const char* newPath) {
 			std::strncpy(path, newPath, sizeof(path));
@@ -143,12 +149,14 @@ struct Sprite {
 		}
 
 		uint16_t transparentColor = 0; // (0 means no transparency)
-		uint16_t frameDuration = 0; // ms
+		uint16_t frameDuration = 0; // >0 ms for animation, or 0 for still image
 
 		STRUCT_PADDING_BYTES(1);
-		STRUCT_PADDING_BYTES(3); // type & x, y
-	};
-	static_assert(sizeof(File) == 24);
+		Sprite::Type type = Sprite::Type::Image;
+		uint8_t x;
+		uint8_t y;
+	} image;
+	static_assert(sizeof(Image) == 24);
 
 	// Custom character (aka inline 1-bit image/bitmap)
 	struct CustomChar {
@@ -156,21 +164,11 @@ struct Sprite {
 		uint16_t color = colors::to565(colors::white);
 		uint8_t width; // width of the char; height is deduced by dividing
 		inline uint8_t height() const { return static_cast<uint8_t>(sizeof(data) * 8) / width; }
-		STRUCT_PADDING_BYTES(3); // type & x, y
-	};
+		Sprite::Type type = Sprite::Type::CustomChar;
+		uint8_t x;
+		uint8_t y;
+	} customChar;
 	static_assert(sizeof(CustomChar) == 24);
-
-	union {
-		Common common;
-		Text text;
-		Time time;
-		Temperature temperature;
-		File file;
-		CustomChar customChar;
-	};
-
-	/// Default construct to sprite of type none (unused)
-	Sprite() : common() {}
 };
 constexpr auto _sizeof_Sprite = sizeof(Sprite);
 static_assert(sizeof(Sprite) == 24);

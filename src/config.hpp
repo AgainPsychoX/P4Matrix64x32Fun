@@ -12,7 +12,8 @@ USE_LOG_LEVEL(EEPROM,           LEVEL_INFO);
 USE_LOG_LEVEL(Web,              LEVEL_INFO);
 USE_LOG_LEVEL(Time,             LEVEL_INFO);
 USE_LOG_LEVEL(Temperature,      LEVEL_INFO);
-USE_LOG_LEVEL(Pages,      		LEVEL_DEBUG);
+USE_LOG_LEVEL(Pages,            LEVEL_TRACE);
+USE_LOG_LEVEL(BMP,              LEVEL_TRACE);
 
 /// Timeouts for networking
 constexpr unsigned long timeoutForConnectingWiFi = 5000; // ms

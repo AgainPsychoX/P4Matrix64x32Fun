@@ -12,8 +12,8 @@
 #define CONCATENATE(X, Y) CONCATENATE_DIRECT(X, Y)
 #define ANONYMOUS_VARIABLE(str) CONCATENATE(str, __LINE__)
 
-#define STRUCT_PADDING_BYTES(size) private: uint8_t ANONYMOUS_VARIABLE(_pad_)[size]; public:
-#define STRUCT_PADDING_BITS(size) private: uint8_t ANONYMOUS_VARIABLE(_pad_) : size; public:
+#define STRUCT_PADDING_BYTES(size) uint8_t ANONYMOUS_VARIABLE(_pad_)[size];
+#define STRUCT_PADDING_BITS(size) uint8_t ANONYMOUS_VARIABLE(_pad_) : size;
 
 // Utils to help printf as binary
 #define BYTE_TO_BINARY_PATTERN "%c%c%c%c%c%c%c%c"

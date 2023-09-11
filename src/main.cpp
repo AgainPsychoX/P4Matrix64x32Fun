@@ -69,25 +69,26 @@ const GFXfont* fontById(uint8_t font) {
 }
 
 // TODO: refactor/encapsulate stuff into pages manager of some sort?
-pages::Page activePage;
+/// Currently displayed page for pages system.
+/// Initialized with predefined stuff to display in case filesystem failure.
+pages::Page activePage = {
+	.duration = 0, // single page
+	.backgroundColors = {
+		.flag = 0,
+		.primary = colors::to565(colors::white),
+	},
+	.backgroundDuration = 0, // still frame
+	.analog = { .centerX = 255, }, // disabled
+	.sprites = {
+		{ .text = { /*.text = "FS FAIL?",*/ .x = 4, .y = 4, } },
+	}
+};
 millis_t lastPageChange;
 
 millis_t lastBackgroundFrame;
 millis_t lastSpriteFrame[pages::Page::maxSprites];
 uint8_t backgroundFrameIndex;
 uint8_t spriteFrameIndex[pages::Page::maxSprites];
-
-/// Setups default active page, most likely used in case the first page fails to load
-inline void prepareDefaultActivePage() {
-	using namespace pages;
-	activePage.backgroundColors.setPrimary(colors::to565(colors::RGB {38, 13, 30}));
-	activePage.sprites[0].common.type = Sprite::Type::Text;
-	activePage.sprites[0].common.x = 7;
-	activePage.sprites[0].common.y = 7;
-	activePage.sprites[0].text.color = colors::to565(colors::white);
-	activePage.sprites[0].text.font = 0; // default font
-	activePage.sprites[0].text.setText("FS FAIL?");
-}
 
 void changeActivePage(uint8_t id) {
 	activePage.loadById(id);
@@ -127,10 +128,13 @@ void substitutePathVariables(char* output, const char* raw) {
 					break;
 				}
 				default:
-					*output = *fp;
+					*output++ = *fp;
 					LOG_WARN(Pages, "Unknown path variable $%c", *fp);
 					break; // will fail to find the file most likely
 			}
+		}
+		else {
+			*output++ = *fp;
 		}
 	}
 	*output = 0;
@@ -148,6 +152,8 @@ void substitutePathVariables(char* output, const char* raw) {
 /// and next frame image file fetched.
 /// \return File for current frame (if found), should fail when cast to boolean on error
 File selectCurrentFrameForFile(const char* rawPath, uint8_t& frameIndex, bool goNextFrame) {
+	LOG_TRACE(Pages, "selectCurrentFrameForFile(\"%s\", &%u, %u)", rawPath, frameIndex, goNextFrame);
+
 	using namespace pages;
 	char basePath[24];
 	substitutePathVariables(basePath, rawPath);
@@ -160,6 +166,7 @@ File selectCurrentFrameForFile(const char* rawPath, uint8_t& frameIndex, bool go
 	if (file.isFile()) {
 		uint16_t signature;
 		file.read(reinterpret_cast<uint8_t*>(&signature), sizeof(signature));
+		file.seek(0, SeekSet);
 		switch (signature) {
 			case BMP::expectedSignature:
 				// Return the found BMP directly, effectively there is no other frames,
@@ -314,12 +321,11 @@ void updatePagesStuff() {
 
 				break;
 			}
-			case Sprite::Type::Image: 
-			case Sprite::Type::Animation: {
+			case Sprite::Type::Image: {
 				bool goNextFrame = false;
-				if (sprite.file.frameDuration != 0) {
+				if (sprite.image.frameDuration != 0) {
 					const auto durationFromLast = static_cast<uint16_t>(currentMillis - lastSpriteFrame[i]);
-					if (durationFromLast >= sprite.file.frameDuration) {
+					if (durationFromLast >= sprite.image.frameDuration) {
 						lastSpriteFrame[i] = currentMillis;
 						goNextFrame = true;
 					}
@@ -332,7 +338,7 @@ void updatePagesStuff() {
 					goNextFrame
 				);
 				if (file) {
-					BMP::drawToDisplay(file, sprite.common.x, sprite.common.y, sprite.file.transparentColor);
+					BMP::drawToDisplay(file, sprite.common.x, sprite.common.y, sprite.image.transparentColor);
 					file.close();
 				}
 				else {
@@ -373,11 +379,25 @@ void updatePagesStuff() {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+uint8_t* stackPointerOnSetup;
+std::ptrdiff_t getStackOffsetFromSetup() {
+	uint8_t stackVariable;
+	return stackPointerOnSetup - &stackVariable;
+}
+
 void setup() {
+	delay(1000);
+
 	// Initialize Serial console
 	Serial.begin(115200);
 	Serial.println("\033[2J\nHello!"); // clears serial output garbage
 	delay(1000);
+
+	// Track stack
+	{
+		uint8_t stackVariable;
+		stackPointerOnSetup = &stackVariable;
+	}
 
 	// Initialize display 
 	display.begin(8);
@@ -448,7 +468,7 @@ void setup() {
 	LittleFS.begin();
 
 	// Initialize pages system
-	prepareDefaultActivePage();
+	std::strncpy(activePage.sprites[0].text.text, "FS FAIL", sizeof(pages::Sprite::Text::text));
 	changeActivePage(0);
 
 	// Register server handlers

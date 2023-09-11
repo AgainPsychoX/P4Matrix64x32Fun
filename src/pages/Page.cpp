@@ -62,7 +62,16 @@ void Page::load(const char* path) {
 					// TODO: ref value/target colors
 					break;
 				}
-				// TODO: other types
+				case Sprite::Type::Image: {
+					LOG_DEBUG(Pages, "\tpath='%.16s' transparentColor=0x%04x frameDuration=%u", 
+						sprite.image.path, sprite.image.transparentColor, sprite.image.frameDuration);
+					break;
+				}
+				case Sprite::Type::CustomChar: {
+					LOG_DEBUG(Pages, "\tcolor=0x%04x width=%u height=%u",
+						sprite.customChar.color, sprite.customChar.width, sprite.customChar.height());
+					break;
+				}
 				// TODO: include full info/flags?
 			}
 		}

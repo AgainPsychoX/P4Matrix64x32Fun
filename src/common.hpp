@@ -95,4 +95,7 @@ extern ESP8266WebServer webServer;
 // Get settings object (which is persisted in EEPROM)
 extern Settings* settings;
 
+// Util to keep track of used RAM, from main
+extern std::ptrdiff_t getStackOffsetFromSetup();
+
 

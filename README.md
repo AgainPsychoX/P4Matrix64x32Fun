@@ -92,6 +92,7 @@ Bitmaps can be "soft" symlinked, if the file contains path (content starting wit
 
 + A lot of code (and directly many issues & possible improvements) shared with [my other project: AquariumController](https://github.com/AgainPsychoX/AquariumController). 
 + Display-related code based on PxMatrix examples, including [Aurora Demo](https://github.com/2dom/PxMatrix/blob/0c7c63c0248321a31dedcefcdaebc87df4624141/examples/Aurora_Demo/Aurora_Demo.ino). Specific library version from GitHub is used, PlatformIO registry has old version (with same internal version number XD)
++ C/C++ compiler used is quite old and includes decade old known GCC bug related to `struct`s aggregate initializers. See [discussion on StackOverflow about "C99 designator member outside of aggregate initializer" error.](https://stackoverflow.com/questions/70172941/c99-designator-member-outside-of-aggregate-initializer). As solution I found out is easiest it's to use `strncpy` which gets inlined/optimized away.
 + [Interesting thing I found while working on project is you can use unsigned integer form of IPv4 addresses](https://www.browserling.com/tools/ip-to-dec).
 + Some WiFi names/passwords (incl. `$` or `-`?`) seems not work for some reason.
 + Problems using `GPIO9` and `GPIO10` for OneWire (constant crashes or upload errors)
