@@ -243,10 +243,6 @@ bool drawToDisplay(Stream& file, uint8_t targetX, uint8_t targetY, uint16_t tran
 		return false;
 	}
 
-	LOG_TRACE(BMP, "stackOffsetFromSetup=%u freeHeap=%u maxFreeBlock=%u", 
-		getStackOffsetFromSetup(), ESP.getFreeHeap(), ESP.getMaxFreeBlockSize());
-	// TODO: if stack issue, consider https://github.com/esp8266/Arduino/discussions/8652
-
 	// Draw pixels (bottom-to-top per BMP standard)
 	LOG_TRACE(BMP, "dibHeader.width=%u dibHeader.height=%u", 
 		dibHeader.width, dibHeader.height);
@@ -254,19 +250,16 @@ bool drawToDisplay(Stream& file, uint8_t targetX, uint8_t targetY, uint16_t tran
 	uint16_t* rowBuffer = new uint16_t[dibHeader.width + 2 /* account for up to 4 bytes padding */];
 	const auto xLimit = std::min<uint8_t>(targetX + dibHeader.width, display.width());
 	const auto yLimit = std::min<uint8_t>(targetY + dibHeader.height, display.height());
-	for (uint8_t y = dibHeader.height; y > yLimit; y--) {
-		// Skip rows that are always outside the display
-		file.read(reinterpret_cast<uint8_t*>(&rowBuffer), rowLengthInBytes);
-	}
 	LOG_TRACE(BMP, "rowLengthInBytes=%u targetX=%u targetY=%u xLimit=%u yLimit=%u rowBuffer=%p", 
 		rowLengthInBytes, targetX, targetY, xLimit, yLimit, rowBuffer);
-	LOG_TRACE(BMP, "stackOffsetFromSetup=%u freeHeap=%u maxFreeBlock=%u", 
-		getStackOffsetFromSetup(), ESP.getFreeHeap(), ESP.getMaxFreeBlockSize());
+	for (uint8_t y = dibHeader.height; y > yLimit; y--) {
+		// Skip rows that are always outside the display
+		file.read(reinterpret_cast<uint8_t*>(rowBuffer), rowLengthInBytes);
+	}
 	display.startWrite();
 	for (int16_t y = yLimit; y > targetY; y--) { // needs to be signed in case targetY = 0
-		file.read(reinterpret_cast<uint8_t*>(&rowBuffer), rowLengthInBytes);
+		file.read(reinterpret_cast<uint8_t*>(rowBuffer), rowLengthInBytes);
 		for (uint8_t x = 0; x < xLimit; x++) {
-			LOG_TRACE(BMP, "(%u,%u)", x, y);
 			uint16_t color = *(rowBuffer + x);
 			if (transparentColor && transparentColor == color) {
 				continue;
