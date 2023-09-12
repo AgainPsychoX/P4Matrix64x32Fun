@@ -1,0 +1,366 @@
+
+  /***********/
+ /* Globals */
+/***********/
+
+body {
+	font-family: 'Segoe UI', sans-serif;
+	font-size: 14px;
+}
+* { 
+	box-sizing: border-box;
+	margin: 0;
+	/* outline: red dashed 1px; */
+}
+
+a {
+	text-decoration: none;
+	color: dodgerblue;
+}
+@media (hover: hover) {
+	a:hover {
+		color: skyblue;
+	}
+}
+@media (pointer: coarse) {
+	a {
+		padding: 2px;
+	}
+	a:hover {
+		color: dodgerblue;
+	}
+}
+
+h1, h2, h3, h4, p, ul, ol, figure, label {
+	margin: 0 8px 8px 0px;
+	clear: both;
+}
+h1, h2, h3, h4, p, ul, ol {
+	text-align: justify;
+}
+h1, h2, h3, h4, h5, h6 {
+	font-weight: 500;
+	text-align: left;
+}
+
+figure {
+	overflow-x: auto;
+}
+
+label {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	justify-content: center;
+}
+label span {
+	margin: 0 2px;
+	text-align: end;
+}
+label span:first-of-type {
+	margin-right: 4px;
+}
+label input + span {
+	margin-left: 4px;
+	text-align: left;
+}
+label input[type=radio],
+label input[type=checkbox] {
+	transform: translate(0px, 1px);
+}
+
+.small {
+	font-size: small;
+}
+.small input[type=checkbox] {
+	vertical-align: middle;
+}
+
+input:invalid {
+	border: 2px solid red;
+	border-radius: 2px;
+}
+
+input[type=number],
+input[type=time] {
+	font-family: 'Segoe UI', monospace;
+	width: auto;
+	text-align: end;
+}
+
+
+
+
+
+  /**********/
+ /* Layout */
+/**********/
+
+body {
+	min-height: 100vh;
+	position: relative;
+	background: SkyBlue;
+}
+
+header .content {
+	display: flex; 
+	justify-content: space-between; 
+}
+header h1 {
+	font-size: xx-large;
+	margin: 0;
+}
+
+main {
+	margin: 0 auto;
+}
+header .content,
+section {
+	padding: 4px 8px;
+	/* padding-top: 4px; */
+	margin: 8px;
+	background: snow;
+}
+
+@media (min-width: 800px) {
+	header .content,
+	section {
+		padding: 8px 12px;
+		/* padding-top: 8px; */
+		margin: 8px;
+	}
+}
+
+
+
+
+
+  /***********/
+ /* Helpers */
+/***********/
+
+.nice-container {
+	width: 100%;
+}
+@media (min-width: calc(960px - 32px)) {
+	.nice-container {
+		width: 864px;
+		margin-left: auto;
+		margin-right: auto;
+	}
+}
+/* @media (min-width: 1200px) {
+	.nice-container {
+		width: calc(1200px - 32px);
+	}
+} */
+
+.loose-table {
+	border-spacing: 0;
+}
+.loose-table th {
+	font-weight: normal;
+}
+.loose-table th,
+.loose-table td {
+	padding: 2px 8px;
+	border: 1px black solid;
+	border-left: none;
+	border-top: none;
+}
+.loose-table th:last-of-type,
+.loose-table td:last-of-type {
+	border-right: none;
+}
+.loose-table tbody > tr:last-of-type > td {
+	border-bottom: none;
+}
+
+.header-with-aside {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: space-between; 
+	justify-items: center;
+	align-items: center;
+	margin-bottom: 8px;
+}
+.header-with-aside > * {
+	display: block;
+	flex-grow: 1;
+}
+.header-with-aside > :first-child {
+	align-self: stretch;
+	justify-self: self-start;
+	margin: 0;
+	flex-grow: 99;
+}
+
+.flex {
+	display: flex;
+	flex-wrap: wrap;
+}
+.flex-evenly {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: space-evenly;
+}
+.flex-center {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: center;
+}
+
+.spaced > * {
+	margin: 4px;
+}
+
+dialog {
+	margin: auto;
+	width: 100%;
+	min-width: 30vw;
+	min-height: 20vw;
+	border: none;
+	box-shadow: 0 0 16px -4px rgba(0, 0, 0, 0.7);
+	opacity: 0;
+}
+dialog::backdrop {
+	background: rgba(0, 0, 0, 0.3);
+	opacity: 0;
+}
+dialog.open::backdrop,
+dialog.open {
+	opacity: 1;
+	transition: opacity .2s;
+}
+dialog.closing::backdrop,
+dialog.closing {
+	opacity: 0;
+	transition: opacity .2s;
+}
+@media (min-width: calc(960px - 32px)) {
+	dialog {
+		width: 480px;
+	}
+}
+
+
+
+
+
+  /******************/
+ /* Specific stuff */
+/******************/
+
+@media (max-width: 440px) { 
+	header h1 {
+		font-size: x-large;
+		align-self: center;
+	}
+}
+
+#status .grid {
+	display: flex;
+	justify-content: space-evenly;
+	flex-wrap: wrap;
+	text-align: end;
+}
+#status .grid label {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	align-items: center;
+	margin: 0;
+}
+#status .grid output {
+	text-align: start;
+	font-size: large;
+}
+
+#status .header-with-aside label {
+	margin-left: 16px;
+}
+#status .header-with-aside output {
+	display: inline-block;
+	text-align: end;
+	min-width: 40px;
+}
+
+output.error {
+	color: FireBrick;
+}
+
+
+
+
+
+
+/* NEW NEW NEW NEW NEW NEW NEW NEW NEW NEW NEW NEW NEW NEW NEW NEW NEW NEW NEW NEW NEW NEW */
+
+#display .canvas-container {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+#display canvas {
+  width: 100%;
+  max-height: calc(100vh - 40px);
+  object-fit: contain;
+  
+/*   box-shadow: 0 0 16px -4px rgba(0, 0, 0, 0.7); */
+  image-rendering: pixelated;
+  
+/* TODO: OCD thing: use exact border buttons have ;) */
+  border: 0.5px solid gray;
+  border-radius: 1px;
+}
+#display .tools {
+  flex-grow: 1;
+  
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-content: stretch;
+  gap: 8px;
+}
+@media (min-width: 600px) {
+  #display .tools {
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+    grid-auto-rows: 1fr;
+  }
+}
+#display button.control-container {
+  display: flex;
+  flex-direction: column;
+  text-align: center;
+  padding: 0 !important;
+  position: relative;
+  align-items: center;
+}
+#display button.control-container .text {
+  width: 100%;
+  padding: 4px;
+  padding-bottom: 0px;
+}
+#display button.control-container input[type=color] {
+  width: 100%;
+  appearance: none;
+  border: none;
+  background: none;
+  padding: 0;
+  margin-bottom: -1px;
+}
+/* .named-color input[type=color]::-webkit-color-swatch-wrapper {
+	padding: 0px;
+} */
+#display button.control-container input[type=checkbox] {
+  margin: 4px;
+  height: 100%;
+}
+#display button.control-container select {
+  align-self: flex-end;
+  width: calc(100% - 8px);
+  margin: 4px;
+/*  margin-top: 4px;
+  border-left: none;
+  border-right: none;
+  border-bottom: none; */
+}

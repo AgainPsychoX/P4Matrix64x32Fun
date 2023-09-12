@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+	<meta charset="UTF-8">
+	<title>P4Matrix64x32</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<link rel="icon" type="image/png" href="favicon.png" />
+	<link rel="stylesheet" href="style.css" type="text/css">
+	<meta name="author" content="Patryk Ludwikowski (patryk.ludwikowski.7@gmail.com)">
+</head>
+<body>
+	<main>
+		<div class="nice-container">
+			<section id="display">
+        		<div class="header-with-aside">
+					<h2>Wyświetlacz</h2>
+				</div>
+				<div class="canvas-container">
+					<canvas></canvas>
+					<div class="tools">
+						<button name="view">Podgląd</button>
+						<button name="pixel">Rysuj punkt</button>
+						<button name="line">Linia</button>
+						<button name="rectangle">Prostokąt</button>
+						<button name="select">Zaznacz</button>
+						<button name="transform">Przekształć</button>
+						<button name="fill" title="Po kliknięciu wypełnia obszar o jednakowym kolorze kolorem rysowania.">Wypełnij kolorem</button>
+						<button class="control-container" tabindex="-1" title="Jeśli aktywne, wypełnia kształt kolorem rysowania. Jeśli nie jest zaznaczone, rysuje tylko kontur kształtu.">
+							<div class="text">Wypełnij kształt</div>
+							<input type="checkbox" name="filling" />
+						</button>
+<!--             <button class="control-container" tabindex="-1">
+							<div class="text">Sposób wypełnienia</div>
+							<select name="filling" title="Sposób wypełniania rysowanego kształtu">
+								<option value="primary">Pełne wypełnienie</option>
+								<option value="secondary">Wypełnienie tłem</option>
+								<option value="outline">Bez wypełnienia</option>
+							</select>
+						</button> -->
+						<button name="color-picker">Selektor kolorów</button>
+						<button class="control-container">
+							<div class="text">Kolor rysowania</div>
+							<input type="color" name="primary" value="#FFFFFF" tabindex="-1" />
+						</button>
+						<button class="control-container">
+							<div class="text">Kolor tła</div>
+							<input type="color" name="secondary" value="#000000" tabindex="-1" />
+						</button>
+						<button name="clear">Wyczyść całość</button>
+						<button name="undo" disabled>Cofnij</button>
+						<button name="redo" disabled>Ponów</button>
+						<button name="save">Zapisz</button>
+						<button name="load">Wczytaj</button>
+					</div>
+				</div>
+			</section>
+		</div>
+	</main>
+	<script type="text/javascript" src="main.js" defer></script>
+</body>
+</html>
