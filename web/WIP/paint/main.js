@@ -50,16 +50,23 @@ function downloadBlob(blob, fileName) {
 	a.remove();
 }
 
-const displayCanvas = document.querySelector('#display canvas');
+// Display canvas represents the state of the display
+const displayCanvas = document.querySelector('#display canvas[name=real]');
 displayCanvas.width = 64;
 displayCanvas.height = 32;
-
 const ctx = displayCanvas.getContext('2d', { alpha: false, willReadFrequently: true });
 ctx.imageSmoothingEnabled = false;
-
 ctx.fillStyle = 'rgb(200, 0, 0)'; 
 ctx.fillRect(0, 0, 1, 1);
 drawBresenhamLine(ctx, 3, 4, 8, 9);
+
+// Helper canvas is used to overlay grid, selection marking, etc.
+const helperCanvas = document.querySelector('#display canvas[name=helper]');
+helperCanvas.width = helperCanvas.offsetWidth;
+helperCanvas.height = helperCanvas.offsetHeight;
+const hctx = helperCanvas.getContext('2d');
+const helperCanvasRatio = helperCanvas.width / displayCanvas.width; 
+// TODO: dynamicly update helper canvas size on container resize
 
 const fillingModeCheckbox = document.querySelector('input[name=filling]');
 
@@ -115,10 +122,26 @@ const drawingState = {
 	}),
 }
 
-displayCanvas.addEventListener('mousedown', function(e) {
+function drawHelperCanvas() {
+	hctx.clearRect(0, 0, helperCanvas.width, helperCanvas.height);
+	
+	hctx.fillStyle = '#7F7F7F1F';
+	const lastX = helperCanvasRatio * (displayCanvas.width - 1);
+	for (let x = helperCanvasRatio; x <= lastX; x += helperCanvasRatio) {
+		hctx.fillRect(x, 0, 1, helperCanvas.height);
+	}
+	const lastY = helperCanvasRatio * (displayCanvas.height - 1);
+	for (let y = helperCanvasRatio; y <= lastY; y += helperCanvasRatio) {
+		hctx.fillRect(0, y, helperCanvas.width, 1);
+	}
+}
+
+drawHelperCanvas();
+
+helperCanvas.addEventListener('mousedown', function(e) {
 	if (drawingState.tool == 0) return;
-	const x = Math.round(e.offsetX / this.clientWidth * this.width - 0.5);
-	const y = Math.round(e.offsetY / this.clientHeight * this.height - 0.5);
+	const x = Math.round(e.offsetX / displayCanvas.clientWidth * displayCanvas.width - 0.5);
+	const y = Math.round(e.offsetY / displayCanvas.clientHeight * displayCanvas.height - 0.5);
 	if (drawingState.tool == 16) {
 		const rgb = Array.prototype.slice.call(ctx.getImageData(x, y, 1, 1).data, 0, 3);
 		const hex = '#' + rgb.map(x => x.toString(16).padStart(2, 0)).join('');
@@ -154,7 +177,7 @@ displayCanvas.addEventListener('mousedown', function(e) {
 		}
 	}
 });
-displayCanvas.addEventListener('mousemove', function(e) {
+helperCanvas.addEventListener('mousemove', function(e) {
 	if (!drawingState.pressed) return;
 	if (drawingState.tool == 0 || drawingState.tool == 16) return;
 	const x = Math.round(event.offsetX / displayCanvas.clientWidth * displayCanvas.width - 0.5);
@@ -180,9 +203,9 @@ displayCanvas.addEventListener('mousemove', function(e) {
 		case 3: // drawing rectangle
 			if (fillingModeCheckbox.checked) {
 				ctx.fillRect(x0 + (x < x0 ? 1 : 0), 
-											y0 + (y < y0 ? 1 : 0), 
-											x - x0 + (x < x0 ? -1 : 1), 
-											y - y0 + (y < y0 ? -1 : 1));
+										 y0 + (y < y0 ? 1 : 0), 
+										 x - x0 + (x < x0 ? -1 : 1), 
+										 y - y0 + (y < y0 ? -1 : 1));
 			}
 			else {
 				const x0f = (x < x0 ? 1 : 0);
@@ -197,7 +220,7 @@ displayCanvas.addEventListener('mousemove', function(e) {
 			break;
 	}
 });
-displayCanvas.addEventListener('mouseup', function() {
+helperCanvas.addEventListener('mouseup', function() {
 	if (drawingState.tool == 0 || drawingState.tool == 16) return;
 	drawingState.history.push({
 		description: `draw`,
@@ -209,7 +232,7 @@ displayCanvas.addEventListener('mouseup', function() {
 	drawingState.pressed = false;
 	drawingState.dragging = false;
 });
-displayCanvas.addEventListener("contextmenu", e => e.preventDefault());
+helperCanvas.addEventListener("contextmenu", e => e.preventDefault());
 
 document.querySelector('button[name=view]').addEventListener('click', () => {
 	drawingState.tool = 0;
@@ -338,10 +361,9 @@ for (const button of document.querySelectorAll('button.control-container')) {
 }
 
 console.log(new Date())
-	
+
 /* TODO:
 	Display section:
-	+ secondary canvas stacked on top, for grid, selection marking etc
 	+ select & move tool
 	+ paste/copy selection
 	+ save as 16-bit BMP (done), with dialog: download (done) or save on the microcontroller file-system
@@ -351,7 +373,7 @@ console.log(new Date())
 	+ refactor
 	+ highlight selected tool
 	+ force 16-bit colors?
-	
+
 	File-system view:
 	+ Basic controls/listing
 	+ Uploading
@@ -360,6 +382,4 @@ console.log(new Date())
 	+ Editing animations (as frames + config)
 	+ Editing page configs
 	+ Select current page config
-	
-	
 */
