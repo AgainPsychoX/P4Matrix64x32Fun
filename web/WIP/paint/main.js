@@ -110,6 +110,12 @@ class History {
 			this.position--;
 		}
 	}
+	replace(state) {
+		if (this.canRedo()) {
+			this.stack.length = this.position + 1;
+		}
+		this.stack[this.position] = state;
+	}
 	canRedo() {
 		return this.position < (this.stack.length - 1);
 	}
@@ -124,15 +130,16 @@ class History {
 		if (!this.canUndo()) throw new Error('nothing more to undo');
 		return this.stack[--this.position];
 	}
-	getCurrent() {
-		return this.stack[this.position];
+	getCurrent(offset = 0) {
+		return this.stack[this.position + offset];
 	}
 }
 
 const drawingState = {
-	tool: 0, // 0 - none, 1 - pixel, 2 - line, 3 - rectangle, 16 - color picker
+	tool: 0, // 0 - none, 1 - pixel, 2 - line, 3 - rectangle, 15 - moving selection, 16 - color picker, 17 - selecting
 	pressed: false,
 	dragging: false,
+	selection: false,
 	history: new History({
 		description: 'initial',
 		fullImageData: ctx.getImageData(0, 0, displayCanvas.width, displayCanvas.height),
@@ -153,17 +160,17 @@ function drawHelperCanvas() {
 		hctx.fillRect(0, y, helperCanvas.width, 1);
 	}
 	
-	if (drawingState.tool == 17 && drawingState.selection) {
-		let { x0, y0, w, h } = drawingState.selection;
-		x0 *= hcr;
-		y0 *= hcr;
+	if ((drawingState.tool == 15 || drawingState.tool == 17) && drawingState.selection) {
+		let { ax, ay, w, h } = drawingState.selection;
+		ax *= hcr;
+		ay *= hcr;
 		w *= hcr;
 		h *= hcr;
 		hctx.fillStyle = '#FFFFFFAF'; 
-		hctx.fillRect(x0, y0, w, 1);
-		hctx.fillRect(x0, y0 + h, w, 1);
-		hctx.fillRect(x0, y0, 1, h);
-		hctx.fillRect(x0 + w, y0, 1, h);
+		hctx.fillRect(ax, ay, w, 1);
+		hctx.fillRect(ax, ay + h, w, 1);
+		hctx.fillRect(ax, ay, 1, h);
+		hctx.fillRect(ax + w, ay, 1, h);
 	}
 }
 
@@ -184,6 +191,13 @@ function saveColor(x, y, which) {
 	}
 }
 
+function ensureLastHistoryStateHasFullImageData() {
+	const state = drawingState.history.getCurrent();
+	if (!state.fullImageData) {
+		state.fullImageData = ctx.getImageData(0, 0, displayCanvas.width, displayCanvas.height);
+	}
+}
+
 helperCanvas.addEventListener('mousedown', function(e) {
 	if (drawingState.tool == 0) return;
 	const x = Math.round(e.offsetX / displayCanvas.clientWidth * displayCanvas.width - 0.5);
@@ -193,9 +207,21 @@ helperCanvas.addEventListener('mousedown', function(e) {
 		saveColor(x, y, event.button);
 		return;
 	}
-	if (drawingState.tool == 17) {
-		drawingState.selection = false;
-		drawHelperCanvas();
+	if (drawingState.tool == 15 || drawingState.tool == 17) {
+		if (drawingState.selection) {
+			const { ax, ay, bx, by, w, h } = drawingState.selection;
+			if (ax <= x && x <= bx && ay <= y && y <= by) {
+				drawingState.tool = 15;
+				drawingState.selection.imageData = ctx.getImageData(ax, ay, w, h);
+				ensureLastHistoryStateHasFullImageData();
+				return
+			}
+			else {
+				drawingState.selection = false;
+				drawHelperCanvas();
+			}
+		}
+		drawingState.tool = 17;
 		return;
 	}
 	switch (event.button) {
@@ -212,11 +238,7 @@ helperCanvas.addEventListener('mousedown', function(e) {
 		ctx.fillRect(x, y, 1, 1);
 	}
 	else {
-		// Make sure full image data is present on current history state for later
-		const state = drawingState.history.getCurrent();
-		if (!state.fullImageData) {
-			state.fullImageData = ctx.getImageData(0, 0, displayCanvas.width, displayCanvas.height);
-		}
+		ensureLastHistoryStateHasFullImageData();
 	}
 });
 helperCanvas.addEventListener('mousemove', function(e) {
@@ -233,21 +255,19 @@ helperCanvas.addEventListener('mousemove', function(e) {
 		return;
 	}
 	if (drawingState.tool == 17) {
-		if (drawingState.tool == 17) {
-			const [x0, y0, x1, y1, w, h] = normalizeRectangleCoords(drawingState.pressed.x, drawingState.pressed.y,
-																															drawingState.dragging.x, drawingState.dragging.y);
-			drawingState.selection = {
-				x0, y0, x1, y1, w, h,
-				imageData: ctx.getImageData(x0, y0, w, h),
-			}
-		}
+		const [ax, ay, bx, by, w, h] = normalizeRectangleCoords(drawingState.pressed.x, drawingState.pressed.y,
+																														drawingState.dragging.x, drawingState.dragging.y);
+		drawingState.selection = { ax, ay, bx, by, w, h };
 		drawHelperCanvas();
 		return;
 	}
 
 	if (drawingState.tool != 1) {
-		const state = drawingState.history.getCurrent();
+		const state = drawingState.history.getCurrent(drawingState.selection?.committed ? -1 : 0);
 		ctx.putImageData(state.fullImageData, 0, 0);
+	}
+	if (drawingState.selection?.initial) {
+		drawingState.selection = drawingState.selection.initial;
 	}
 	
 	const x0 = drawingState.pressed.x;
@@ -279,15 +299,40 @@ helperCanvas.addEventListener('mousemove', function(e) {
 				ctx.fillRect(x, y0 + y0f, 1, y - y0 + y1f);
 			}
 			break;
+		case 15:
+			// ctx.fillStyle = 'pink'
+			ctx.fillStyle = secondaryColorPicker.value;
+			const { ax, ay, w, h } = drawingState.selection;
+			ctx.fillRect(ax, ay, w, h);
+			ctx.putImageData(drawingState.selection.imageData, x, y);
+			drawingState.selection = {
+				...drawingState.selection,
+				ax: x, ay: y, 
+				bx: x + w - 1, by: y + h - 1,
+				initial: drawingState.selection,
+			};
+			drawHelperCanvas();
+			break;
 	}
 });
 helperCanvas.addEventListener('mouseup', function() {
 	if (0 < drawingState.tool && drawingState.tool < 16) {
-		// Save after drawing
-		drawingState.history.push({
-			description: `draw`,
-			fullImageData: ctx.getImageData(0, 0, displayCanvas.width, displayCanvas.height),
-		});
+		// Save after drawing or moving
+		const shouldReplace = drawingState.tool == 15 && drawingState.selection.committed;
+		const description = drawingState.tool == 15 ? 'move' : 'draw';
+		const fullImageData = ctx.getImageData(0, 0, displayCanvas.width, displayCanvas.height);
+		if (shouldReplace) {
+			drawingState.history.replace({ description, fullImageData });
+		}
+		else {
+			drawingState.history.push({ description, fullImageData });
+			if (drawingState.tool == 15) {
+				drawingState.selection.committed = true;
+				if (drawingState.selection.initial) {
+					drawingState.selection.initial.committed = true;
+				}
+			}
+		}
 		undoButton.disabled = false;
 		redoButton.disabled = true;
 	}
@@ -338,6 +383,11 @@ undoButton.addEventListener('click', () => {
 		throw new Error('unsupported undo');
 	}
 	
+	if (drawingState.selection) {
+		drawingState.selection = drawingState.selection.initial;
+		drawHelperCanvas();
+	}
+	
 	undoButton.disabled = !drawingState.history.canUndo();
 	redoButton.disabled = false;
 });
@@ -348,6 +398,11 @@ redoButton.addEventListener('click', () => {
 	}
 	else {
 		throw new Error('unsupported redo');
+	}
+	
+	if (drawingState.selection) {
+		drawingState.selection = undefined;
+		drawHelperCanvas();
 	}
 	
 	undoButton.disabled = false;
@@ -430,8 +485,8 @@ console.log(new Date())
 
 /* TODO:
 	Display section:
-	+ select & move tool
 	+ paste/copy selection
+	+ save only selected, if there is selection
 	+ save as 16-bit BMP (done), with dialog: download (done) or save on the microcontroller file-system
 	+ load (well, paste at (0,0)), from upload, URL or read from the microcontroller file-system
 	+ transforms: resizing/scaling, flipping, rotating, skewing?
