@@ -299,7 +299,7 @@ output.error {
 	position: relative;
 
 /*   box-shadow: 0 0 16px -4px rgba(0, 0, 0, 0.7); */
-	
+
 /* TODO: OCD thing: use exact border buttons have ;) */
 	border: 1px solid gray;
 	border-radius: 1px;
@@ -320,7 +320,8 @@ output.error {
 	height: 100%;
 	left: 0;
 	
-	image-rendering: crisp-edges
+	image-rendering: crisp-edges;
+	mix-blend-mode: difference;
 }
 #display .tools {
 	display: grid;

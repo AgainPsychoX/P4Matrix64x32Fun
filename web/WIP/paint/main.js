@@ -37,7 +37,7 @@ function drawBresenhamLine(ctx, x0, y0, x1, y1) {
 	}
 }
 
-// Util to download file 
+/// Util to download file 
 function downloadBlob(blob, fileName) {
 	const url = window.URL.createObjectURL(blob);
 	const a = document.createElement('a');
@@ -50,15 +50,32 @@ function downloadBlob(blob, fileName) {
 	a.remove();
 }
 
+/// Util to normalize rectangle coords so that first point is in left-top and second in right-bottom,
+/// also returning width/height. 
+function normalizeRectangleCoords(x0, y0, x1, y1) {
+	const ax = Math.min(x0, x1);
+	const ay = Math.min(y0, y1);
+	const bx = Math.max(x0, x1);
+	const by = Math.max(y0, y1);
+	return [ax, ay, bx, by, bx - ax + 1, by - ay + 1];
+}
+
 // Display canvas represents the state of the display
 const displayCanvas = document.querySelector('#display canvas[name=real]');
 displayCanvas.width = 64;
 displayCanvas.height = 32;
 const ctx = displayCanvas.getContext('2d', { alpha: false, willReadFrequently: true });
 ctx.imageSmoothingEnabled = false;
-ctx.fillStyle = 'rgb(200, 0, 0)'; 
-ctx.fillRect(0, 0, 1, 1);
+
+// Some stuff for testing
+ctx.fillStyle = 'rgb(200, 0, 0)'; ctx.fillRect(0, 0, 1, 1);
 drawBresenhamLine(ctx, 3, 4, 8, 9);
+ctx.fillStyle = 'white'; ctx.fillRect(0, 24, 32, 8);
+ctx.fillStyle = 'black'; ctx.fillRect(32, 24, 32, 8);
+const grd = ctx.createLinearGradient(0, 0, 64, 0);
+grd.addColorStop(0, 'white');
+grd.addColorStop(1, 'black');
+ctx.fillStyle = grd; ctx.fillRect(0, 16, 64, 8);
 
 // Helper canvas is used to overlay grid, selection marking, etc.
 const helperCanvas = document.querySelector('#display canvas[name=helper]');
@@ -123,38 +140,63 @@ const drawingState = {
 }
 
 function drawHelperCanvas() {
+	const hcr = helperCanvasRatio;
 	hctx.clearRect(0, 0, helperCanvas.width, helperCanvas.height);
 	
 	hctx.fillStyle = '#7F7F7F1F';
-	const lastX = helperCanvasRatio * (displayCanvas.width - 1);
-	for (let x = helperCanvasRatio; x <= lastX; x += helperCanvasRatio) {
+	const lastX = hcr * (displayCanvas.width - 1);
+	for (let x = hcr; x <= lastX; x += hcr) {
 		hctx.fillRect(x, 0, 1, helperCanvas.height);
 	}
-	const lastY = helperCanvasRatio * (displayCanvas.height - 1);
-	for (let y = helperCanvasRatio; y <= lastY; y += helperCanvasRatio) {
+	const lastY = hcr * (displayCanvas.height - 1);
+	for (let y = hcr; y <= lastY; y += hcr) {
 		hctx.fillRect(0, y, helperCanvas.width, 1);
+	}
+	
+	if (drawingState.tool == 17 && drawingState.selection) {
+		let { x0, y0, w, h } = drawingState.selection;
+		x0 *= hcr;
+		y0 *= hcr;
+		w *= hcr;
+		h *= hcr;
+		hctx.fillStyle = '#FFFFFFAF'; 
+		hctx.fillRect(x0, y0, w, 1);
+		hctx.fillRect(x0, y0 + h, w, 1);
+		hctx.fillRect(x0, y0, 1, h);
+		hctx.fillRect(x0 + w, y0, 1, h);
 	}
 }
 
 drawHelperCanvas();
 
+function saveColor(x, y, which) { 
+	const rgb = Array.prototype.slice.call(ctx.getImageData(x, y, 1, 1).data, 0, 3);
+	const hex = '#' + rgb.map(x => x.toString(16).padStart(2, 0)).join('');
+	switch (which) {
+		case 0:
+			primaryColorPicker.value = hex;
+			return;
+		case 2:
+			secondaryColorPicker.value = hex;
+			return;
+		default:
+			return;
+	}
+}
+
 helperCanvas.addEventListener('mousedown', function(e) {
 	if (drawingState.tool == 0) return;
 	const x = Math.round(e.offsetX / displayCanvas.clientWidth * displayCanvas.width - 0.5);
 	const y = Math.round(e.offsetY / displayCanvas.clientHeight * displayCanvas.height - 0.5);
+	drawingState.pressed = {x, y};
 	if (drawingState.tool == 16) {
-		const rgb = Array.prototype.slice.call(ctx.getImageData(x, y, 1, 1).data, 0, 3);
-		const hex = '#' + rgb.map(x => x.toString(16).padStart(2, 0)).join('');
-		switch (event.button) {
-			case 0:
-				primaryColorPicker.value = hex;
-				break;
-			case 2:
-				secondaryColorPicker.value = hex;
-				break;
-			default:
-				return; // no drawing
-		}
+		saveColor(x, y, event.button);
+		return;
+	}
+	if (drawingState.tool == 17) {
+		drawingState.selection = false;
+		drawHelperCanvas();
+		return;
 	}
 	switch (event.button) {
 		case 0:
@@ -166,11 +208,11 @@ helperCanvas.addEventListener('mousedown', function(e) {
 		default:
 			return; // no drawing
 	}
-	drawingState.pressed = {x, y};
 	if (drawingState.tool == 1) {
 		ctx.fillRect(x, y, 1, 1);
 	}
 	else {
+		// Make sure full image data is present on current history state for later
 		const state = drawingState.history.getCurrent();
 		if (!state.fullImageData) {
 			state.fullImageData = ctx.getImageData(0, 0, displayCanvas.width, displayCanvas.height);
@@ -179,13 +221,30 @@ helperCanvas.addEventListener('mousedown', function(e) {
 });
 helperCanvas.addEventListener('mousemove', function(e) {
 	if (!drawingState.pressed) return;
-	if (drawingState.tool == 0 || drawingState.tool == 16) return;
+	if (drawingState.tool == 0) return;
 	const x = Math.round(event.offsetX / displayCanvas.clientWidth * displayCanvas.width - 0.5);
 	const y = Math.round(event.offsetY / displayCanvas.clientHeight * displayCanvas.height - 0.5);
 	
 	if (drawingState.dragging && drawingState.dragging.x == x && drawingState.dragging.y == y) return;
 	drawingState.dragging = {x, y};
-		
+	
+	if (drawingState.tool == 16) {
+		saveColor(x, y, event.button);
+		return;
+	}
+	if (drawingState.tool == 17) {
+		if (drawingState.tool == 17) {
+			const [x0, y0, x1, y1, w, h] = normalizeRectangleCoords(drawingState.pressed.x, drawingState.pressed.y,
+																															drawingState.dragging.x, drawingState.dragging.y);
+			drawingState.selection = {
+				x0, y0, x1, y1, w, h,
+				imageData: ctx.getImageData(x0, y0, w, h),
+			}
+		}
+		drawHelperCanvas();
+		return;
+	}
+
 	if (drawingState.tool != 1) {
 		const state = drawingState.history.getCurrent();
 		ctx.putImageData(state.fullImageData, 0, 0);
@@ -202,10 +261,12 @@ helperCanvas.addEventListener('mousemove', function(e) {
 			break;
 		case 3: // drawing rectangle
 			if (fillingModeCheckbox.checked) {
-				ctx.fillRect(x0 + (x < x0 ? 1 : 0), 
-										 y0 + (y < y0 ? 1 : 0), 
-										 x - x0 + (x < x0 ? -1 : 1), 
-										 y - y0 + (y < y0 ? -1 : 1));
+				const [ax, ay, bx, by, w, h] = normalizeRectangleCoords(x0, y0, x, y);
+				ctx.fillRect(ax, ay, w, h);
+				// ctx.fillRect(x0 + (x < x0 ? 1 : 0), 
+				//              y0 + (y < y0 ? 1 : 0), 
+				//              x - x0 + (x < x0 ? -1 : 1), 
+				//              y - y0 + (y < y0 ? -1 : 1));
 			}
 			else {
 				const x0f = (x < x0 ? 1 : 0);
@@ -221,13 +282,15 @@ helperCanvas.addEventListener('mousemove', function(e) {
 	}
 });
 helperCanvas.addEventListener('mouseup', function() {
-	if (drawingState.tool == 0 || drawingState.tool == 16) return;
-	drawingState.history.push({
-		description: `draw`,
-		fullImageData: ctx.getImageData(0, 0, displayCanvas.width, displayCanvas.height),
-	});
-	undoButton.disabled = false;
-	redoButton.disabled = true;
+	if (0 < drawingState.tool && drawingState.tool < 16) {
+		// Save after drawing
+		drawingState.history.push({
+			description: `draw`,
+			fullImageData: ctx.getImageData(0, 0, displayCanvas.width, displayCanvas.height),
+		});
+		undoButton.disabled = false;
+		redoButton.disabled = true;
+	}
 	
 	drawingState.pressed = false;
 	drawingState.dragging = false;
@@ -245,6 +308,9 @@ document.querySelector('button[name=line]').addEventListener('click', () => {
 });
 document.querySelector('button[name=rectangle]').addEventListener('click', () => {
 	drawingState.tool = 3;
+});
+document.querySelector('button[name=select]').addEventListener('click', () => {
+	drawingState.tool = 17;
 });
 document.querySelector('button[name=color-picker]').addEventListener('click', () => {
 	drawingState.tool = 16;
@@ -368,6 +434,7 @@ console.log(new Date())
 	+ paste/copy selection
 	+ save as 16-bit BMP (done), with dialog: download (done) or save on the microcontroller file-system
 	+ load (well, paste at (0,0)), from upload, URL or read from the microcontroller file-system
+	+ transforms: resizing/scaling, flipping, rotating, skewing?
 	+ keyboard shortcuts
 	+ responsive design & make it work on phone
 	+ refactor
