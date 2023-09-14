@@ -50,6 +50,22 @@ function downloadBlob(blob, fileName) {
 	a.remove();
 }
 
+/// Util to open upload file dialog
+async function openUploadFiles(accept, multiple = false) {
+	const input = document.createElement('input');
+	input.type = 'file';
+	input.accept = accept;
+	input.multiple = multiple;
+	input.style.display = 'none';
+	document.body.appendChild(input);
+	const changed = new Promise((resolve, reject) => { input.addEventListener('change', resolve); });
+	input.click();
+	await changed;
+	input.remove();
+	// setTimeout(() => input.remove(), 1);
+	return input.files;
+}
+
 /// Util to normalize rectangle coords so that first point is in left-top and second in right-bottom,
 /// also returning width/height. 
 function normalizeRectangleCoords(x0, y0, x1, y1) {
@@ -470,9 +486,35 @@ document.querySelector('button[name=save]').addEventListener('click', () => {
 	
 	// TODO: dialog: to browser (blob), clipboard or microcontroller filesystem
 });
-document.querySelector('button[name=load]').addEventListener('click', () => {
+document.querySelector('button[name=load]').addEventListener('click', async () => {
 	// TODO: dialog: from browser, clipboard or microcontroller filesystem
-	// TODO: convert from 16-bit BMP if necessary
+	
+	const files = await openUploadFiles();
+	if (files.length == 0) return;
+	const file = files[0];
+	
+	const image = new Image();
+	const loaded = new Promise((resolve, reject) => {
+		image.addEventListener('load', resolve);
+		image.addEventListener('error', reject);
+	});
+	image.src = URL.createObjectURL(file);
+	await loaded;  
+
+	ctx.drawImage(image, 0, 0);
+	drawingState.selection = {
+		ax: 0, ay: 0,
+		bx: image.width - 1, by: image.height - 1,
+		w: image.width, h: image.height,
+		committed: true,
+	};
+	drawingState.tool = 15;
+	drawingState.history.push({
+		description: 'paste', 
+		fullImageData: ctx.getImageData(0, 0, displayCanvas.width, displayCanvas.height),
+	});
+	undoButton.disabled = false;
+	redoButton.disabled = true;
 });
 
 for (const button of document.querySelectorAll('button.control-container')) {
@@ -485,15 +527,15 @@ console.log(new Date())
 
 /* TODO:
 	Display section:
-	+ paste/copy selection
 	+ save only selected, if there is selection
-	+ save as 16-bit BMP (done), with dialog: download (done) or save on the microcontroller file-system
-	+ load (well, paste at (0,0)), from upload, URL or read from the microcontroller file-system
-	+ transforms: resizing/scaling, flipping, rotating, skewing?
+	+ paste/copy selection
 	+ keyboard shortcuts
+	+ highlight selected tool
+	+ save as 16-bit BMP (done), with dialog: download (done) or save on the microcontroller file-system
+	+ load from upload, URL or read from the microcontroller file-system
+	+ transforms: resizing/scaling, flipping, rotating, skewing?
 	+ responsive design & make it work on phone
 	+ refactor
-	+ highlight selected tool
 	+ force 16-bit colors?
 
 	File-system view:
