@@ -439,12 +439,14 @@ redoButton.addEventListener('click', () => {
 });
 
 document.querySelector('button[name=save]').addEventListener('click', () => {
-	const width = 64;
-	const height = 32;
+	const offsetX = drawingState.selection?.ax || 0;
+	const offsetY = drawingState.selection?.ay || 0;
+	const width = drawingState.selection?.w || displayCanvas.width;
+	const height = drawingState.selection?.h || displayCanvas.height;
 	const bytesPerPixel = 2; // 16-bit
-	const rowLength = width * bytesPerPixel;
-	const paddingPerRow = ((rowLength % 4 > 0) ? (4 - rowLength % 4) : 0);
-	const imageSize = (width * bytesPerPixel + paddingPerRow) * height;
+	const rowLength = width * bytesPerPixel; // in bytes, without padding
+	const paddingPerRow = ((rowLength % 4 > 0) ? (4 - rowLength % 4) : 0); // in bytes
+	const imageSize = (width * bytesPerPixel + paddingPerRow) * height; // in bytes
 	const offsetToPixelArray = 14 + 40 + 12; // file header length + DIB header length + 3x 32-bit masks
 	const buffer = new ArrayBuffer(offsetToPixelArray + imageSize);
 	const view = new DataView(buffer, 0);
@@ -477,8 +479,9 @@ document.querySelector('button[name=save]').addEventListener('click', () => {
 	
 	// Copy the pixel data, converting to 16-bit colors
 	const uint16Array = new Uint16Array(buffer, offsetToPixelArray);
-	const imageData = ctx.getImageData(0, 0, displayCanvas.width, displayCanvas.height);
+	const imageData = ctx.getImageData(offsetX, offsetY, width, height);
 	const dataIterator = imageData.data[Symbol.iterator]();
+	const widthWithPadding = width + paddingPerRow / 2; // in pixels, divide paddingPerRow (in bytes) by 2 because uint16
 	for (let y = 0; y < height; y++) {
 		for (let x = 0; x < width; x++) {
 			const { value: r } = dataIterator.next();
@@ -488,7 +491,7 @@ document.querySelector('button[name=save]').addEventListener('click', () => {
 			// if (r === undefined || g === undefined || b === undefined) {
 			//    break;
 			// }
-			uint16Array[width * (height - y - 1) + x] = ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
+			uint16Array[widthWithPadding * (height - y - 1) + x] = ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
 		}
 	}
 	
@@ -544,7 +547,6 @@ console.log(new Date())
 
 /* TODO:
 	Display section:
-	+ save only selected, if there is selection
 	+ paste/copy selection
 	+ keyboard shortcuts
 	+ highlight selected tool
