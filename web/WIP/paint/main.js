@@ -228,8 +228,13 @@ helperCanvas.addEventListener('mousedown', function(e) {
 			const { ax, ay, bx, by, w, h } = drawingState.selection;
 			if (ax <= x && x <= bx && ay <= y && y <= by) {
 				drawingState.tool = 15;
-				drawingState.selection.imageData = ctx.getImageData(ax, ay, w, h);
-				ensureLastHistoryStateHasFullImageData();
+				if (drawingState.selection.committed) {
+					drawingState.history.undo();
+				}
+				else {
+					drawingState.selection.imageData = ctx.getImageData(ax, ay, w, h);
+					ensureLastHistoryStateHasFullImageData();
+				}
 				return
 			}
 			else {
@@ -279,7 +284,7 @@ helperCanvas.addEventListener('mousemove', function(e) {
 	}
 
 	if (drawingState.tool != 1) {
-		const state = drawingState.history.getCurrent(drawingState.selection?.committed ? -1 : 0);
+		const state = drawingState.history.getCurrent();
 		ctx.putImageData(state.fullImageData, 0, 0);
 	}
 	if (drawingState.selection?.initial) {
@@ -334,21 +339,21 @@ helperCanvas.addEventListener('mousemove', function(e) {
 helperCanvas.addEventListener('mouseup', function() {
 	if (0 < drawingState.tool && drawingState.tool < 16) {
 		// Save after drawing or moving
-		const shouldReplace = drawingState.tool == 15 && drawingState.selection.committed;
+		// const shouldReplace = drawingState.tool == 15 && drawingState.selection.committed;
 		const description = drawingState.tool == 15 ? 'move' : 'draw';
 		const fullImageData = ctx.getImageData(0, 0, displayCanvas.width, displayCanvas.height);
-		if (shouldReplace) {
-			drawingState.history.replace({ description, fullImageData });
-		}
-		else {
+		// if (shouldReplace) {
+		//   drawingState.history.replace({ description, fullImageData });
+		// }
+		// else {
 			drawingState.history.push({ description, fullImageData });
 			if (drawingState.tool == 15) {
 				drawingState.selection.committed = true;
-				if (drawingState.selection.initial) {
-					drawingState.selection.initial.committed = true;
-				}
+				// if (drawingState.selection.initial) {
+				//   drawingState.selection.initial.committed = true;
+				// }
 			}
-		}
+		// }
 		undoButton.disabled = false;
 		redoButton.disabled = true;
 	}
@@ -499,14 +504,14 @@ document.querySelector('button[name=load]').addEventListener('click', async () =
 		image.addEventListener('error', reject);
 	});
 	image.src = URL.createObjectURL(file);
-	await loaded;  
-
+	await loaded;
+	
 	ctx.drawImage(image, 0, 0);
 	drawingState.selection = {
 		ax: 0, ay: 0,
 		bx: image.width - 1, by: image.height - 1,
 		w: image.width, h: image.height,
-		committed: true,
+		// committed: true,
 	};
 	drawingState.tool = 15;
 	drawingState.history.push({
@@ -527,6 +532,8 @@ console.log(new Date())
 
 /* TODO:
 	Display section:
+	+ BUG: select, move, undo, try move the same selected (fixed?)
+	+ BUG: loaded image leaves background color when moved instead existing background
 	+ save only selected, if there is selection
 	+ paste/copy selection
 	+ keyboard shortcuts
