@@ -285,6 +285,7 @@ helperCanvas.addEventListener('mousemove', function(e) {
 
 	if (drawingState.tool != 1) {
 		const state = drawingState.history.getCurrent();
+		// console.log(drawingState.history.position, state)
 		ctx.putImageData(state.fullImageData, 0, 0);
 	}
 	if (drawingState.selection?.initial) {
@@ -324,7 +325,9 @@ helperCanvas.addEventListener('mousemove', function(e) {
 			// ctx.fillStyle = 'pink'
 			ctx.fillStyle = secondaryColorPicker.value;
 			const { ax, ay, w, h } = drawingState.selection;
-			ctx.fillRect(ax, ay, w, h);
+			if (!drawingState.selection.pasted) {
+				ctx.fillRect(ax, ay, w, h);
+			}
 			ctx.putImageData(drawingState.selection.imageData, x, y);
 			drawingState.selection = {
 				...drawingState.selection,
@@ -340,7 +343,7 @@ helperCanvas.addEventListener('mouseup', function() {
 	if (0 < drawingState.tool && drawingState.tool < 16) {
 		// Save after drawing or moving
 		// const shouldReplace = drawingState.tool == 15 && drawingState.selection.committed;
-		const description = drawingState.tool == 15 ? 'move' : 'draw';
+		const description = drawingState.selection?.pasted ? 'paste' : drawingState.tool == 15 ? 'move' : 'draw';
 		const fullImageData = ctx.getImageData(0, 0, displayCanvas.width, displayCanvas.height);
 		// if (shouldReplace) {
 		//   drawingState.history.replace({ description, fullImageData });
@@ -405,7 +408,12 @@ undoButton.addEventListener('click', () => {
 	}
 	
 	if (drawingState.selection) {
-		drawingState.selection = drawingState.selection.initial;
+		if (drawingState.selection.pasted) {
+			drawingState.selection = false;
+		}
+		else {
+			drawingState.selection = drawingState.selection.initial;
+		}
 		drawHelperCanvas();
 	}
 	
@@ -505,21 +513,25 @@ document.querySelector('button[name=load]').addEventListener('click', async () =
 	});
 	image.src = URL.createObjectURL(file);
 	await loaded;
-	
+
 	ctx.drawImage(image, 0, 0);
+	drawingState.history.push({
+		description: 'paste',
+		fullImageData: ctx.getImageData(0, 0, displayCanvas.width, displayCanvas.height)
+	});
+	undoButton.disabled = false;
+	redoButton.disabled = true;
+	
+	drawingState.tool = 15;
 	drawingState.selection = {
 		ax: 0, ay: 0,
 		bx: image.width - 1, by: image.height - 1,
 		w: image.width, h: image.height,
-		// committed: true,
+		pasted: true,
+		committed: true,
+		imageData: ctx.getImageData(0, 0, image.width, image.height),
 	};
-	drawingState.tool = 15;
-	drawingState.history.push({
-		description: 'paste', 
-		fullImageData: ctx.getImageData(0, 0, displayCanvas.width, displayCanvas.height),
-	});
-	undoButton.disabled = false;
-	redoButton.disabled = true;
+	drawHelperCanvas();
 });
 
 for (const button of document.querySelectorAll('button.control-container')) {
@@ -532,8 +544,6 @@ console.log(new Date())
 
 /* TODO:
 	Display section:
-	+ BUG: select, move, undo, try move the same selected (fixed?)
-	+ BUG: loaded image leaves background color when moved instead existing background
 	+ save only selected, if there is selection
 	+ paste/copy selection
 	+ keyboard shortcuts
