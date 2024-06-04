@@ -53,8 +53,8 @@ public:
 
 private:
 	uint8_t displayColorDepth = 0;
-	uint8_t displayRowPattern = 0;
-	const uint8_t* displayNextBufferPosition = buffer + sendBufferSize;
+	uint8_t displayRowPattern = rowPattern - 1;
+	const uint8_t* displayNextBufferPosition = buffer;
 
 	
 	////////////////////////////////////////
@@ -64,7 +64,7 @@ public:
 		: Adafruit_GFX(constWidth, constHeight) 
 	{
 		displayNextBufferPosition = buffer;
-		// for (size_t y = 0; y < height; y++) {
+		// for (size_t y = 0; y < constHeight; y++) {
 		// 	rowsPointers[y] = 
 		// 		sendBufferSize - 1
 		// 		- panelWidthBytes * (y >> floor_log2(rowPattern));
@@ -149,27 +149,54 @@ public:
 		setMux(displayRowPattern);
 		pulseLatch();
 		enableOutput();
+
 		unsigned long start = micros();
+		unsigned long expected = minimalShowTime * (1 << displayColorDepth);
+
 		SPI.writeBytes(displayNextBufferPosition, sendBufferSize);
 
-		displayNextBufferPosition += sendBufferSize;
 		displayRowPattern += 1;
 		if (displayRowPattern >= rowPattern) {
 			displayRowPattern = 0;
 			displayColorDepth += 1;
 			if (displayColorDepth >= colorDepth) {
 				displayColorDepth = 0;
-				displayNextBufferPosition = buffer + sendBufferSize;
 			}
 		}
 
-		unsigned long expected = minimalShowTime * (1 << displayColorDepth);
+		if (displayRowPattern == rowPattern - 1 && displayColorDepth == colorDepth - 1) {
+			displayNextBufferPosition = buffer;
+		}
+		else {
+			displayNextBufferPosition += sendBufferSize;
+		}
+
 		while (micros() - start < expected) {
 			asm volatile ("nop");
 		}
+
 		disableOutput();
-		// Serial.printf("d rP=%u cD=%u bP=%u\n", 
-		// 	displayRowPattern, displayColorDepth, displayNextBufferPosition - buffer);
+
+		// Serial.printf("d\trP=%u\tcD=%u\tnBP=%u\tus=%lu\n", 
+		// 	displayRowPattern, displayColorDepth, 
+		// 	displayNextBufferPosition - buffer, micros() - start);
+	}
+
+	void displaySingleColorDepth(uint8_t minimalShowTime)
+	{
+#ifdef ESP8266
+		ESP.wdtFeed();
+#endif
+		do {
+			displayStep(minimalShowTime);
+		} while (displayRowPattern > 0);
+	}
+
+	void displayEverything(uint8_t minimalShowTime)
+	{
+		do {
+			displaySingleColorDepth(minimalShowTime);
+		} while (displayColorDepth > 0);
 	}
 
 private:
@@ -230,7 +257,7 @@ private:
 	inline void enableOutput()
 	{
 #ifdef ESP8266
-		if constexpr (PIN_LATCH == 16) {
+		if constexpr (PIN_OE == 16) {
 			GP16O = GP16O & ~1;
 		}
 		else {
@@ -244,9 +271,8 @@ private:
 	inline void disableOutput()
 	{
 #ifdef ESP8266
-		if constexpr (PIN_LATCH == 16) {
+		if constexpr (PIN_OE == 16) {
 			GP16O = GP16O | 1;
-
 		}
 		else {
 			GPOS = 1 << PIN_OE;
