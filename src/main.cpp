@@ -27,14 +27,31 @@ enum class Mode : uint8_t
 	Everything,
 };
 
-Mode mode = Mode::Steps;
+Mode mode = Mode::SingleColorDepth;
 uint8_t interval = 4;
-uint8_t baseShowTime = 4;
-uint8_t depthStepShowTime = 4;
+uint8_t baseShowTime = 0;
+uint8_t depthStepShowTime = 16;
 
+/// Setups display ticker for specified settings.
+/// The `interval` is in milliseconds, 
+/// the `baseShowTime` and `depthStepShowTime` are in microseconds.
 void setupDisplayTicker(Mode mode, uint8_t interval, uint8_t baseShowTime, uint8_t depthStepShowTime)
 {
 	displayTicker.detach();
+
+	// Warn about invalid show-time and interval ratio, which causes hang ups
+	auto expected = baseShowTime + depthStepShowTime * (1 << display.colorDepth());
+	switch (mode) {
+		case Mode::Steps: break;
+		case Mode::SingleColorDepth: expected *= 2; break;
+		case Mode::Everything: expected *= 2 * display.colorDepth(); break;
+	}
+	if (interval * 1000 <= expected) {
+		Serial.println(F("Display interval might be too small for specified show time"));
+	}
+	const auto p = static_cast<float>(-expected) / static_cast<float>(interval * 10);
+	Serial.printf("Estimated performance hit: %.2f%%\n", p);
+
 	switch (mode) {
 		case Mode::Steps:
 			displayTicker.attach_ms(interval, [baseShowTime, depthStepShowTime] {
@@ -196,6 +213,9 @@ void loop()
 						display.printDebugCounters();
 						display.resetDebugCounters();
 #endif
+					}
+					else {
+						Serial.println(F("Unknown command"));
 					}
 				}
 			}

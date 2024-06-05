@@ -20,43 +20,48 @@ template <
 	int8_t PIN_E = -1,
 	uint8_t constWidth = 64,
 	uint8_t constHeight = 32,
-	uint8_t rowPattern = 8,
-	uint8_t colorDepth = 4,
+	uint8_t constRowPattern = 8,
+	uint8_t constColorDepth = 4,
 	uint32_t spiFrequency = 20000000
 >
 class MyPxMatrix : public Adafruit_GFX
 {
-	static_assert(rowPattern <  2 || PIN_A >= 0);
-	static_assert(rowPattern <  4 || PIN_B >= 0);
-	static_assert(rowPattern <  8 || PIN_C >= 0);
-	static_assert(rowPattern < 16 || PIN_D >= 0);
-	static_assert(rowPattern < 32 || PIN_E >= 0);
+	static_assert(constRowPattern <  2 || PIN_A >= 0);
+	static_assert(constRowPattern <  4 || PIN_B >= 0);
+	static_assert(constRowPattern <  8 || PIN_C >= 0);
+	static_assert(constRowPattern < 16 || PIN_D >= 0);
+	static_assert(constRowPattern < 32 || PIN_E >= 0);
 
-	static_assert(0 < colorDepth && colorDepth <= 5);
+	static_assert(0 < constColorDepth && constColorDepth <= 5);
 
 	static constexpr size_t panelsWidth = 1;
 	static constexpr size_t panelWidthBytes = constWidth / panelsWidth / 8;
-	static constexpr size_t patternColorBytes = constHeight / rowPattern * constWidth / 8;
+	static constexpr size_t patternColorBytes = constHeight / constRowPattern * constWidth / 8;
 	static constexpr size_t sendBufferSize = patternColorBytes * 3;
 	static constexpr size_t noDepthBufferSize = constWidth * constHeight * 3 / 8;
-	static constexpr size_t rowPatternBits = floor_log2(rowPattern);
+	static constexpr size_t rowPatternBits = floor_log2(constRowPattern);
 
 	////////////////////////////////////////
 	// Fields
 
 	alignas(uint32_t)
-	uint8_t buffer[noDepthBufferSize * colorDepth];
+	uint8_t buffer[noDepthBufferSize * constColorDepth];
 	// uint32_t* rowsPointers[height];
 
 public:
 	bool flipX = false;
 
+	/// Returns color depth in bits.
+	inline uint8_t colorDepth() const { return constColorDepth; }
+
+	/// Returns row scan pattern for the display.
+	inline uint8_t rowPattern() const { return constRowPattern; }
+
 private:
 	uint8_t displayColorDepth = 0;
-	uint8_t displayRowPattern = rowPattern - 1;
+	uint8_t displayRowPattern = constRowPattern - 1;
 	const uint8_t* displayNextBufferPosition = buffer;
 
-	
 	////////////////////////////////////////
 	// Constructor & begin
 public:
@@ -67,8 +72,8 @@ public:
 		// for (size_t y = 0; y < constHeight; y++) {
 		// 	rowsPointers[y] = 
 		// 		sendBufferSize - 1
-		// 		- panelWidthBytes * (y >> floor_log2(rowPattern));
-		// 		+ (y % rowPattern) * sendBufferSize;
+		// 		- panelWidthBytes * (y >> floor_log2(constRowPattern));
+		// 		+ (y % constRowPattern) * sendBufferSize;
 		// }
 	}
 
@@ -108,19 +113,19 @@ public:
 		const auto xByte = x / 8;
 		const auto xBit  = x % 8;
 
-		const uint_fast32_t rOffset = (y % rowPattern) * sendBufferSize 
-			+ (sendBufferSize - 1) - xByte - panelWidthBytes * (y >> floor_log2(rowPattern));
+		const uint_fast32_t rOffset = (y % constRowPattern) * sendBufferSize 
+			+ (sendBufferSize - 1) - xByte - panelWidthBytes * (y >> floor_log2(constRowPattern));
 		const uint_fast32_t gOffset = rOffset - patternColorBytes;
 		const uint_fast32_t bOffset = gOffset - patternColorBytes;
 
 		// Convert RGB565 to components with 5 bit precision (only 5 LSB used),
 		// then down to defined color depth. 6th bit of green is always ignored.
-		const uint_fast8_t r = color >> 11 >> (5 - colorDepth);
-		const uint_fast8_t g = color >>  6 >> (5 - colorDepth);
-		const uint_fast8_t b = color /***/ >> (5 - colorDepth);
+		const uint_fast8_t r = color >> 11 >> (5 - constColorDepth);
+		const uint_fast8_t g = color >>  6 >> (5 - constColorDepth);
+		const uint_fast8_t b = color /***/ >> (5 - constColorDepth);
 
 		#pragma GCC unroll 4
-		for (uint_fast8_t i = 0; i < colorDepth; i++) {
+		for (uint_fast8_t i = 0; i < constColorDepth; i++) {
 			const size_t depthBufferOffset = noDepthBufferSize * i;
 
 			if ((r >> i) & 1)
@@ -158,15 +163,15 @@ public:
 		SPI.writeBytes(displayNextBufferPosition, sendBufferSize);
 
 		displayRowPattern += 1;
-		if (displayRowPattern >= rowPattern) {
+		if (displayRowPattern >= constRowPattern) {
 			displayRowPattern = 0;
 			displayColorDepth += 1;
-			if (displayColorDepth >= colorDepth) {
+			if (displayColorDepth >= constColorDepth) {
 				displayColorDepth = 0;
 			}
 		}
 
-		if (displayRowPattern == rowPattern - 1 && displayColorDepth == colorDepth - 1) {
+		if (displayRowPattern == constRowPattern - 1 && displayColorDepth == constColorDepth - 1) {
 			displayNextBufferPosition = buffer;
 		}
 		else {
@@ -213,18 +218,18 @@ public:
 #ifdef DEBUG_DISPLAY_SHOW_TIME
 	volatile bool collectDebugCounters =  false;
 	size_t showTimeCounter;
-	unsigned long showTimeByRowPattern[rowPattern];
-	unsigned long showTimeByColorDepth[colorDepth];
+	unsigned long showTimeByRowPattern[constRowPattern];
+	unsigned long showTimeByColorDepth[constColorDepth];
 
 	void printDebugCounters()
 	{
 		collectDebugCounters = false;
 		Serial.printf("showTimeCounter=%u\n", showTimeCounter);
-		for (size_t i = 0; i < rowPattern; i++) {
+		for (size_t i = 0; i < constRowPattern; i++) {
 			Serial.printf("showTimeByRowPattern[%u]=%lu\n", 
 				i, showTimeByRowPattern[i]);
 		}
-		for (size_t i = 0; i < colorDepth; i++) {
+		for (size_t i = 0; i < constColorDepth; i++) {
 			Serial.printf("showTimeByColorDepth[%u]=%lu\n", 
 				i, showTimeByColorDepth[i]);
 		}
@@ -235,10 +240,10 @@ public:
 	{
 		collectDebugCounters = false;
 		showTimeCounter = 0;
-		for (size_t i = 0; i < rowPattern; i++) {
+		for (size_t i = 0; i < constRowPattern; i++) {
 			showTimeByRowPattern[i] = 0;
 		}
-		for (size_t i = 0; i < colorDepth; i++) {
+		for (size_t i = 0; i < constColorDepth; i++) {
 			showTimeByColorDepth[i] = 0;
 		}
 		collectDebugCounters = true;
