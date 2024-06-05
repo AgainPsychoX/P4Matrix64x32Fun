@@ -1,11 +1,9 @@
 
-### To-do
+## Notes
 
-1. Fix colors
-	+ Add extra `asm volatile ("nop");` to balance out `if` paths
-	+ Maybe dump buffer in old and new and compare
-	+ Maybe show time is scaled with invalid proportions?
-	+ Maybe it's show time issue out of sync with rows?
++ There is [nice RGB565 color picker](https://rgbcolorpicker.com/565) online.
+
+### To-do
 
 + Write up proper README.
 + Migrate old project version code here, with new library.

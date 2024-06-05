@@ -13,7 +13,7 @@ MyPxMatrix<
 	64,         // width
 	32,         // height
 	8,          // rowPattern
-	4,          // colorDepth
+	5,          // colorDepth
 	20000000    // spiFrequency
 > display;
 
@@ -29,25 +29,26 @@ enum class Mode : uint8_t
 
 Mode mode = Mode::Steps;
 uint8_t interval = 4;
-uint8_t minimalShowTime = 4;
+uint8_t baseShowTime = 4;
+uint8_t depthStepShowTime = 4;
 
-void setupDisplayTicker(Mode mode, uint8_t interval, uint8_t minimalShowTime)
+void setupDisplayTicker(Mode mode, uint8_t interval, uint8_t baseShowTime, uint8_t depthStepShowTime)
 {
 	displayTicker.detach();
 	switch (mode) {
 		case Mode::Steps:
-			displayTicker.attach_ms(interval, [minimalShowTime] {
-				display.displayStep(minimalShowTime);
+			displayTicker.attach_ms(interval, [baseShowTime, depthStepShowTime] {
+				display.displayStep(baseShowTime, depthStepShowTime);
 			});
 			break;
 		case Mode::SingleColorDepth:
-			displayTicker.attach_ms(interval, [minimalShowTime] {
-				display.displaySingleColorDepth(minimalShowTime);
+			displayTicker.attach_ms(interval, [baseShowTime, depthStepShowTime] {
+				display.displaySingleColorDepth(baseShowTime, depthStepShowTime);
 			});
 			break;
 		case Mode::Everything:
-			displayTicker.attach_ms(interval, [minimalShowTime] {
-				display.displayEverything(minimalShowTime);
+			displayTicker.attach_ms(interval, [baseShowTime, depthStepShowTime] {
+				display.displayEverything(baseShowTime, depthStepShowTime);
 			});
 			break;
 		default:
@@ -68,7 +69,10 @@ void setup()
 	// Initialize display
 	display.begin();
 	display.fillScreen(0); // black
-	setupDisplayTicker(mode, interval, minimalShowTime);
+	setupDisplayTicker(mode, interval, baseShowTime, depthStepShowTime);
+#ifdef DEBUG_DISPLAY_SHOW_TIME
+	display.resetDebugCounters();
+#endif
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -112,6 +116,26 @@ void drawThreeStripesAngled()
 	display.drawLine(0, display.height() / 2, display.width() / 2, display.height(), 0b0000000000011111);
 }
 
+void drawSingleColorGradients(uint8_t shift)
+{
+	for (int x = 0; x < 32; x++) {
+		display.drawLine(x, 0, x, display.height(), x << shift);
+	}
+	for (int y = 0; y < 32; y++) {
+		display.drawLine(32, y, display.width(), y, y << shift);
+	}
+}
+
+void drawWhiteGradients()
+{
+	for (int x = 0; x < 32; x++) {
+		display.drawLine(x, 0, x, display.height(), (x << 11) | (x << 6) | x);
+	}
+	for (int y = 0; y < 32; y++) {
+		display.drawLine(32, y, display.width(), y, (y << 11) | (y << 6) | y);
+	}
+}
+
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -126,48 +150,53 @@ void loop()
 		if (c == '\r' || c == '\n') {
 			if (lineLength > 0) {
 				line[lineLength] = '\0';
-				if (line[0] == 'i' && lineLength >= 2) {
-					interval = strtoul(line + 2, nullptr, 10);
-					setupDisplayTicker(mode, interval, minimalShowTime);
-				}
-				else if (line[0] == 't' && lineLength >= 2) {
-					minimalShowTime = strtoul(line + 2, nullptr, 10);
-					setupDisplayTicker(mode, interval, minimalShowTime);
-				}
-				else if (line[0] == 'm' && lineLength >= 2) {
-					mode = static_cast<Mode>(strtoul(line + 2, nullptr, 10));
-					setupDisplayTicker(mode, interval, minimalShowTime);
-				}
-				else if (line[0] == 'e' && lineLength >= 2) {
-					unsigned int example = strtoul(line + 2, nullptr, 10);
-					switch (example) {
-						case 0:
-							display.fillScreen(0);
-							break;
-						case 1:
-							examples::drawHorizontalGradient();
-							break;
-						case 2:
-							examples::drawVerticalGradient();
-							break;
-						case 3:
-							examples::draw2DGradient();
-							break;
-						case 4:
-							examples::drawThreeStripesAngled();
-							break;
-						default:
-							Serial.println(F("Example not found"));
-							break;
+				char* p = line;
+				while (*p && *p != '=') p++;
+				if (*p) {
+					if (line[0] == 'i') {
+						interval = strtoul(p + 1, nullptr, 10);
+						setupDisplayTicker(mode, interval, baseShowTime, depthStepShowTime);
+					}
+					else if (line[0] == 'b') {
+						baseShowTime = strtoul(p + 1, nullptr, 10);
+						setupDisplayTicker(mode, interval, baseShowTime, depthStepShowTime);
+					}
+					else if (line[0] == 'd') {
+						depthStepShowTime = strtoul(p + 1, nullptr, 10);
+						setupDisplayTicker(mode, interval, baseShowTime, depthStepShowTime);
+					}
+					else if (line[0] == 'm') {
+						mode = static_cast<Mode>(strtoul(p + 1, nullptr, 10));
+						setupDisplayTicker(mode, interval, baseShowTime, depthStepShowTime);
+					}
+					else if (line[0] == 'e') {
+						unsigned int example = strtoul(p + 1, nullptr, 10);
+						switch (example) {
+							case 0: display.fillScreen(0); break;
+							case 1: examples::drawHorizontalGradient(); break;
+							case 2: examples::drawVerticalGradient(); break;
+							case 3: examples::draw2DGradient(); break;
+							case 4: examples::drawThreeStripesAngled(); break;
+							case 5: examples::drawSingleColorGradients(11); break;
+							case 6: examples::drawSingleColorGradients(6); break;
+							case 7: examples::drawSingleColorGradients(0); break;
+							case 8: examples::drawWhiteGradients(); break;
+							default:
+								Serial.println(F("Example not found"));
+								break;
+						}
+					}
+					else {
+						Serial.println(F("Unknown assignment"));
 					}
 				}
-				else if (line[0] == '?') {
-					Serial.print(F("interval="));
-					Serial.println(interval);
-					Serial.print(F("minimalShowTime="));
-					Serial.println(minimalShowTime);
-					Serial.print(F("mode="));
-					Serial.println(static_cast<int>(mode));
+				else /* not assignment */ {
+					if (line[0] == 'd' && line[1] == 'c') {
+#ifdef DEBUG_DISPLAY_SHOW_TIME
+						display.printDebugCounters();
+						display.resetDebugCounters();
+#endif
+					}
 				}
 			}
 			lineLength = 0;

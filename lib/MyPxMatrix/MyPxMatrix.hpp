@@ -113,10 +113,11 @@ public:
 		const uint_fast32_t gOffset = rOffset - patternColorBytes;
 		const uint_fast32_t bOffset = gOffset - patternColorBytes;
 
-		// Convert RGB565 to components with 5 bit precision; only 5 LSB used
-		const uint_fast8_t r = color >> 11;
-		const uint_fast8_t g = color >> 6; // 6 instead 5, ignoring 6th bit
-		const uint_fast8_t b = color;
+		// Convert RGB565 to components with 5 bit precision (only 5 LSB used),
+		// then down to defined color depth. 6th bit of green is always ignored.
+		const uint_fast8_t r = color >> 11 >> (5 - colorDepth);
+		const uint_fast8_t g = color >>  6 >> (5 - colorDepth);
+		const uint_fast8_t b = color /***/ >> (5 - colorDepth);
 
 		#pragma GCC unroll 4
 		for (uint_fast8_t i = 0; i < colorDepth; i++) {
@@ -143,15 +144,16 @@ public:
 	// Display driving
 
 	/// Updates the display by minimal step (single minimal chunk).
-	/// The `minimalShowTime` is in microseconds.
-	void displayStep(uint8_t minimalShowTime)
+	/// The show time values are in microseconds.
+	/// The `depthStepShowTime` scales with the color depth.
+	void displayStep(uint8_t baseShowTime, uint8_t depthStepShowTime)
 	{
 		setMux(displayRowPattern);
 		pulseLatch();
 		enableOutput();
 
 		unsigned long start = micros();
-		unsigned long expected = minimalShowTime * (1 << displayColorDepth);
+		unsigned long expected = baseShowTime + depthStepShowTime * (1 << displayColorDepth);
 
 		SPI.writeBytes(displayNextBufferPosition, sendBufferSize);
 
@@ -171,6 +173,15 @@ public:
 			displayNextBufferPosition += sendBufferSize;
 		}
 
+#ifdef DEBUG_DISPLAY_SHOW_TIME
+		if (collectDebugCounters) {
+			unsigned long now = micros() - start;
+			showTimeByRowPattern[displayRowPattern] += now;
+			showTimeByColorDepth[displayColorDepth] += now;
+			showTimeCounter++;
+		}
+#endif
+
 		while (micros() - start < expected) {
 			asm volatile ("nop");
 		}
@@ -182,22 +193,57 @@ public:
 		// 	displayNextBufferPosition - buffer, micros() - start);
 	}
 
-	void displaySingleColorDepth(uint8_t minimalShowTime)
+	void displaySingleColorDepth(uint8_t baseShowTime, uint8_t depthStepShowTime)
 	{
 #ifdef ESP8266
 		ESP.wdtFeed();
 #endif
 		do {
-			displayStep(minimalShowTime);
+			displayStep(baseShowTime, depthStepShowTime);
 		} while (displayRowPattern > 0);
 	}
 
-	void displayEverything(uint8_t minimalShowTime)
+	void displayEverything(uint8_t baseShowTime, uint8_t depthStepShowTime)
 	{
 		do {
-			displaySingleColorDepth(minimalShowTime);
+			displaySingleColorDepth(baseShowTime, depthStepShowTime);
 		} while (displayColorDepth > 0);
 	}
+
+#ifdef DEBUG_DISPLAY_SHOW_TIME
+	volatile bool collectDebugCounters =  false;
+	size_t showTimeCounter;
+	unsigned long showTimeByRowPattern[rowPattern];
+	unsigned long showTimeByColorDepth[colorDepth];
+
+	void printDebugCounters()
+	{
+		collectDebugCounters = false;
+		Serial.printf("showTimeCounter=%u\n", showTimeCounter);
+		for (size_t i = 0; i < rowPattern; i++) {
+			Serial.printf("showTimeByRowPattern[%u]=%lu\n", 
+				i, showTimeByRowPattern[i]);
+		}
+		for (size_t i = 0; i < colorDepth; i++) {
+			Serial.printf("showTimeByColorDepth[%u]=%lu\n", 
+				i, showTimeByColorDepth[i]);
+		}
+		collectDebugCounters = true;
+	}
+
+	void resetDebugCounters()
+	{
+		collectDebugCounters = false;
+		showTimeCounter = 0;
+		for (size_t i = 0; i < rowPattern; i++) {
+			showTimeByRowPattern[i] = 0;
+		}
+		for (size_t i = 0; i < colorDepth; i++) {
+			showTimeByColorDepth[i] = 0;
+		}
+		collectDebugCounters = true;
+	}
+#endif
 
 private:
 #ifdef ESP8266
