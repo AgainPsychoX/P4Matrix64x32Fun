@@ -29,11 +29,11 @@ enum class Mode : uint8_t
 
 Mode mode = Mode::SingleColorDepth;
 uint8_t interval = 4;
-uint8_t showTime = 16;
+uint16_t showTime = 400;
 
 /// Setups display ticker for specified settings.
-/// The `interval` is in milliseconds, `showTime` are in microseconds.
-void setupDisplayTicker(Mode mode, uint8_t interval, uint8_t showTime)
+/// The `interval` is in milliseconds, `showTime` is in CPU cycles.
+void setupDisplayTicker(Mode mode, uint8_t interval, uint16_t showTime)
 {
 	displayTicker.detach();
 
@@ -71,24 +71,6 @@ void setupDisplayTicker(Mode mode, uint8_t interval, uint8_t showTime)
 			// No ticking, no display
 			break;
 	}
-}
-
-void setup()
-{
-	delay(1000);
-
-	// Initialize Serial console
-	Serial.begin(115200);
-	Serial.println(F("\033[2J\nHello!")); // clears serial output garbage
-	delay(1000);
-
-	// Initialize display
-	display.begin();
-	display.fillScreen(0); // black
-	setupDisplayTicker(mode, interval, showTime);
-#ifdef DEBUG_DISPLAY_SHOW_TIME
-	display.resetDebugCounters();
-#endif
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -155,6 +137,25 @@ void drawWhiteGradients()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+
+void setup()
+{
+	delay(1000);
+
+	// Initialize Serial console
+	Serial.begin(115200);
+	Serial.println(F("\033[2J\nHello!")); // clears serial output garbage
+	delay(1000);
+
+	// Initialize display
+	display.begin();
+	// display.fillScreen(0); // black
+	examples::drawSingleColorGradients(0);
+	setupDisplayTicker(mode, interval, showTime);
+#ifdef DEBUG_DISPLAY_SHOW_TIME
+	display.resetDebugCounters();
+#endif
+}
 
 void loop()
 {

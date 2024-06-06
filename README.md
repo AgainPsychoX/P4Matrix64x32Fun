@@ -5,7 +5,7 @@
 
 ### To-do
 
-+ Minimize `baseShowTime` to allow for better contrast.
++ For debug in `displayStep`: count cycles instead microseconds & try balance the `if`s
 + Write up proper README.
 + Migrate old project version code here, with new library.
 + Try `yield` more, and/or try avoid critical/no interrupts sections.

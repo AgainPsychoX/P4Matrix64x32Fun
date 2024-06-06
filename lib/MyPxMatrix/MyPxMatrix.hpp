@@ -166,16 +166,30 @@ public:
 	// Display driving
 
 	/// Updates the display by minimal step (single minimal chunk).
-	/// The `showTime` (in microseconds) scales with the currently displayed 
+	/// The `showTime` (in CPU cycles) scales with the currently displayed 
 	/// color depth. It's kinda half of actual show time on average in long run.
-	void displayStep(uint8_t showTime)
+	void displayStep(uint16_t showTime)
 	{
 		setMux(displayRowPattern);
 		pulseLatch();
-		enableOutput();
 
+#ifdef DISPLAY_FAST_UPDATE_OPTIMIZATION
+#	ifndef DISPLAY_CYCLES_FOR_UPDATE
+#		define DISPLAY_CYCLES_FOR_UPDATE 5871ULL * F_CPU / 1000000000 // from my experiments on ESP8266
+#	endif
+		static constexpr uint16_t cyclesForUpdate = DISPLAY_CYCLES_FOR_UPDATE;
+		unsigned long expected = (showTime >> 2) * (1 << displayColorDepth);
+		if (expected >= cyclesForUpdate) {
+			expected -= cyclesForUpdate;
+			enableOutput();
+		}
+#else
+		enableOutput();
+#endif
+
+#ifdef DEBUG_DISPLAY_SHOW_TIME
 		unsigned long start = micros();
-		unsigned long expected = showTime * (1 << displayColorDepth);
+#endif
 
 		SPI.writeBytes(displayNextBufferPosition, sendBufferSize);
 
@@ -196,6 +210,7 @@ public:
 		}
 
 #ifdef DEBUG_DISPLAY_SHOW_TIME
+		// TODO: count cycles instead microseconds & try balance `if`s above
 		if (collectDebugCounters) {
 			unsigned long now = micros() - start;
 			showTimeByRowPattern[displayRowPattern] += now;
@@ -204,7 +219,11 @@ public:
 		}
 #endif // DEBUG_DISPLAY_SHOW_TIME
 
-		while (micros() - start < expected) {
+		enableOutput();
+
+		// Loop has 4 cycles per loop iteration
+		for (unsigned long i = 0; i < expected; i++) {
+			asm volatile ("nop");
 			asm volatile ("nop");
 		}
 
@@ -215,7 +234,7 @@ public:
 		// 	displayNextBufferPosition - buffer, micros() - start);
 	}
 
-	void displaySingleColorDepth(uint8_t showTime)
+	void displaySingleColorDepth(uint16_t showTime)
 	{
 #ifdef ESP8266
 		ESP.wdtFeed();
@@ -225,7 +244,7 @@ public:
 		} while (displayRowPattern > 0);
 	}
 
-	void displayEverything(uint8_t showTime)
+	void displayEverything(uint16_t showTime)
 	{
 		do {
 			displaySingleColorDepth(showTime);
