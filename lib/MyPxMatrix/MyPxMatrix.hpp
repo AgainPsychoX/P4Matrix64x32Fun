@@ -46,7 +46,9 @@ class MyPxMatrix : public Adafruit_GFX
 
 	alignas(uint32_t)
 	uint8_t buffer[noDepthBufferSize * constColorDepth];
-	// uint32_t* rowsPointers[height];
+#ifdef DISPLAY_ROW_POINTERS_OPTIMIZATION
+	uint8_t* rowsPointers[constHeight];
+#endif // DISPLAY_ROW_POINTERS_OPTIMIZATION
 
 public:
 	bool flipX = false;
@@ -60,7 +62,7 @@ public:
 private:
 	uint8_t displayColorDepth = 0;
 	uint8_t displayRowPattern = constRowPattern - 1;
-	const uint8_t* displayNextBufferPosition = buffer;
+	const uint8_t* displayNextBufferPosition;
 
 	////////////////////////////////////////
 	// Constructor & begin
@@ -69,12 +71,13 @@ public:
 		: Adafruit_GFX(constWidth, constHeight) 
 	{
 		displayNextBufferPosition = buffer;
-		// for (size_t y = 0; y < constHeight; y++) {
-		// 	rowsPointers[y] = 
-		// 		sendBufferSize - 1
-		// 		- panelWidthBytes * (y >> floor_log2(constRowPattern));
-		// 		+ (y % constRowPattern) * sendBufferSize;
-		// }
+#ifdef DISPLAY_ROW_POINTERS_OPTIMIZATION
+		for (size_t y = 0; y < constHeight; y++) {
+			rowsPointers[y] = buffer
+				+ (sendBufferSize - 1) + (y % constRowPattern) * sendBufferSize
+				- panelWidthBytes * (y >> floor_log2(constRowPattern));
+		}
+#endif // DISPLAY_ROW_POINTERS_OPTIMIZATION
 	}
 
 	void begin()
@@ -113,10 +116,18 @@ public:
 		const auto xByte = x / 8;
 		const auto xBit  = x % 8;
 
-		const uint_fast32_t rOffset = (y % constRowPattern) * sendBufferSize 
-			+ (sendBufferSize - 1) - xByte - panelWidthBytes * (y >> floor_log2(constRowPattern));
-		const uint_fast32_t gOffset = rOffset - patternColorBytes;
-		const uint_fast32_t bOffset = gOffset - patternColorBytes;
+#ifdef DISPLAY_ROW_POINTERS_OPTIMIZATION
+		uint8_t* rowPointer = rowsPointers[y] - xByte;
+		static constexpr auto rOffset = -patternColorBytes * 0;
+		static constexpr auto gOffset = -patternColorBytes * 1;
+		static constexpr auto bOffset = -patternColorBytes * 2;
+#else // ifndef DISPLAY_ROW_POINTERS_OPTIMIZATION
+		const int_fast32_t rOffset = 0
+			+ (sendBufferSize - 1) + (y % constRowPattern) * sendBufferSize
+			- panelWidthBytes * (y >> floor_log2(constRowPattern)) - xByte;
+		const int_fast32_t gOffset = rOffset - patternColorBytes;
+		const int_fast32_t bOffset = gOffset - patternColorBytes;
+#endif // ifndef DISPLAY_ROW_POINTERS_OPTIMIZATION
 
 		// Convert RGB565 to components with 5 bit precision (only 5 LSB used),
 		// then down to defined color depth. 6th bit of green is always ignored.
@@ -124,10 +135,26 @@ public:
 		const uint_fast8_t g = color >>  6 >> (5 - constColorDepth);
 		const uint_fast8_t b = color /***/ >> (5 - constColorDepth);
 
-		#pragma GCC unroll 4
+		#pragma GCC unroll 5
 		for (uint_fast8_t i = 0; i < constColorDepth; i++) {
 			const size_t depthBufferOffset = noDepthBufferSize * i;
 
+#ifdef DISPLAY_ROW_POINTERS_OPTIMIZATION
+			if ((r >> i) & 1)
+				rowPointer[depthBufferOffset + rOffset] |= 1 << xBit;
+			else
+				rowPointer[depthBufferOffset + rOffset] &= ~(1 << xBit);
+
+			if ((g >> i) & 1)
+				rowPointer[depthBufferOffset + gOffset] |= 1 << xBit;
+			else
+				rowPointer[depthBufferOffset + gOffset] &= ~(1 << xBit);
+
+			if ((b >> i) & 1)
+				rowPointer[depthBufferOffset + bOffset] |= 1 << xBit;
+			else
+				rowPointer[depthBufferOffset + bOffset] &= ~(1 << xBit);
+#else // ifndef DISPLAY_ROW_POINTERS_OPTIMIZATION
 			if ((r >> i) & 1)
 				buffer[depthBufferOffset + rOffset] |= 1 << xBit;
 			else
@@ -142,6 +169,7 @@ public:
 				buffer[depthBufferOffset + bOffset] |= 1 << xBit;
 			else
 				buffer[depthBufferOffset + bOffset] &= ~(1 << xBit);
+#endif // ifndef DISPLAY_ROW_POINTERS_OPTIMIZATION
 		}
 	}
 
@@ -185,7 +213,7 @@ public:
 			showTimeByColorDepth[displayColorDepth] += now;
 			showTimeCounter++;
 		}
-#endif
+#endif // DEBUG_DISPLAY_SHOW_TIME
 
 		while (micros() - start < expected) {
 			asm volatile ("nop");
@@ -248,7 +276,7 @@ public:
 		}
 		collectDebugCounters = true;
 	}
-#endif
+#endif // DEBUG_DISPLAY_SHOW_TIME
 
 private:
 #ifdef ESP8266
