@@ -42,6 +42,7 @@ void setupDisplayTicker(Mode mode, uint8_t interval, uint8_t baseShowTime, uint8
 	// Warn about invalid show-time and interval ratio, which causes hang ups
 	auto expected = baseShowTime + depthStepShowTime * (1 << display.colorDepth());
 	switch (mode) {
+		case Mode::None: Serial.println(F("Display timer disabled")); return;
 		case Mode::Steps: break;
 		case Mode::SingleColorDepth: expected *= 2; break;
 		case Mode::Everything: expected *= 2 * display.colorDepth(); break;
@@ -188,6 +189,7 @@ void loop()
 					}
 					else if (line[0] == 'e') {
 						unsigned int example = strtoul(p + 1, nullptr, 10);
+						unsigned long start = micros();
 						switch (example) {
 							case 0: display.fillScreen(0); break;
 							case 1: examples::drawHorizontalGradient(); break;
@@ -202,6 +204,7 @@ void loop()
 								Serial.println(F("Example not found"));
 								break;
 						}
+						Serial.printf("Draw time: %lu us\n", micros() - start);
 					}
 					else {
 						Serial.println(F("Unknown assignment"));

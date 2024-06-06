@@ -1,15 +1,6 @@
 #include <Adafruit_GFX.h>
 #include <SPI.h>
 
-namespace {
-
-constexpr unsigned floor_log2(unsigned x)
-{
-	return x == 1 ? 0 : 1 + floor_log2(x >> 1);
-}
-
-}
-
 template <
 	int8_t PIN_LATCH = 16,
 	int8_t PIN_OE = 2,
@@ -39,7 +30,6 @@ class MyPxMatrix : public Adafruit_GFX
 	static constexpr size_t patternColorBytes = constHeight / constRowPattern * constWidth / 8;
 	static constexpr size_t sendBufferSize = patternColorBytes * 3;
 	static constexpr size_t noDepthBufferSize = constWidth * constHeight * 3 / 8;
-	static constexpr size_t rowPatternBits = floor_log2(constRowPattern);
 
 	////////////////////////////////////////
 	// Fields
@@ -52,6 +42,7 @@ class MyPxMatrix : public Adafruit_GFX
 
 public:
 	bool flipX = false;
+	bool flipY = false;
 
 	/// Returns color depth in bits.
 	inline uint8_t colorDepth() const { return constColorDepth; }
@@ -75,7 +66,7 @@ public:
 		for (size_t y = 0; y < constHeight; y++) {
 			rowsPointers[y] = buffer
 				+ (sendBufferSize - 1) + (y % constRowPattern) * sendBufferSize
-				- panelWidthBytes * (y >> floor_log2(constRowPattern));
+				- panelWidthBytes * (y / constRowPattern);
 		}
 #endif // DISPLAY_ROW_POINTERS_OPTIMIZATION
 	}
@@ -102,19 +93,17 @@ public:
 	////////////////////////////////////////
 	// Drawing overrides
 
-	virtual void drawPixel(int16_t x, int16_t y, uint16_t color) override
+	virtual void drawPixel(int16_t x_, int16_t y_, uint16_t color) override
 	{
-		if (x < 0 || x >= constWidth || y < 0 || y >= constHeight)
+		if (x_ < 0 || x_ >= constWidth || y_ < 0 || y_ >= constHeight)
 			return;
 
-		// TODO: rotate?
-
-		// Allow for flipping in
-		if (!flipX) 
-			x = constWidth - 1 - x;
-
-		const auto xByte = x / 8;
-		const auto xBit  = x % 8;
+		// Casting to unsigned and fast types really helps here a tiny bit
+		// Also, allow for flipping in; note X axis is flipped by default.
+		const uint_fast16_t x = flipX ? x_ : constWidth  - 1 - x_;
+		const uint_fast16_t y = flipY ? constHeight - 1 - y_ : y_;
+		const uint_fast16_t xByte = x / 8;
+		const uint_fast16_t xBit  = x % 8;
 
 #ifdef DISPLAY_ROW_POINTERS_OPTIMIZATION
 		uint8_t* rowPointer = rowsPointers[y] - xByte;
@@ -124,7 +113,7 @@ public:
 #else // ifndef DISPLAY_ROW_POINTERS_OPTIMIZATION
 		const int_fast32_t rOffset = 0
 			+ (sendBufferSize - 1) + (y % constRowPattern) * sendBufferSize
-			- panelWidthBytes * (y >> floor_log2(constRowPattern)) - xByte;
+			- panelWidthBytes * (y / constRowPattern) - xByte;
 		const int_fast32_t gOffset = rOffset - patternColorBytes;
 		const int_fast32_t bOffset = gOffset - patternColorBytes;
 #endif // ifndef DISPLAY_ROW_POINTERS_OPTIMIZATION
