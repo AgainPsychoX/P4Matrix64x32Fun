@@ -166,16 +166,16 @@ public:
 	// Display driving
 
 	/// Updates the display by minimal step (single minimal chunk).
-	/// The show time values are in microseconds.
-	/// The `depthStepShowTime` scales with the color depth.
-	void displayStep(uint8_t baseShowTime, uint8_t depthStepShowTime)
+	/// The `showTime` (in microseconds) scales with the currently displayed 
+	/// color depth. It's kinda half of actual show time on average in long run.
+	void displayStep(uint8_t showTime)
 	{
 		setMux(displayRowPattern);
 		pulseLatch();
 		enableOutput();
 
 		unsigned long start = micros();
-		unsigned long expected = baseShowTime + depthStepShowTime * (1 << displayColorDepth);
+		unsigned long expected = showTime * (1 << displayColorDepth);
 
 		SPI.writeBytes(displayNextBufferPosition, sendBufferSize);
 
@@ -215,20 +215,20 @@ public:
 		// 	displayNextBufferPosition - buffer, micros() - start);
 	}
 
-	void displaySingleColorDepth(uint8_t baseShowTime, uint8_t depthStepShowTime)
+	void displaySingleColorDepth(uint8_t showTime)
 	{
 #ifdef ESP8266
 		ESP.wdtFeed();
 #endif
 		do {
-			displayStep(baseShowTime, depthStepShowTime);
+			displayStep(showTime);
 		} while (displayRowPattern > 0);
 	}
 
-	void displayEverything(uint8_t baseShowTime, uint8_t depthStepShowTime)
+	void displayEverything(uint8_t showTime)
 	{
 		do {
-			displaySingleColorDepth(baseShowTime, depthStepShowTime);
+			displaySingleColorDepth(showTime);
 		} while (displayColorDepth > 0);
 	}
 

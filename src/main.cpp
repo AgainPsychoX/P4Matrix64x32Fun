@@ -29,18 +29,16 @@ enum class Mode : uint8_t
 
 Mode mode = Mode::SingleColorDepth;
 uint8_t interval = 4;
-uint8_t baseShowTime = 0;
-uint8_t depthStepShowTime = 16;
+uint8_t showTime = 16;
 
 /// Setups display ticker for specified settings.
-/// The `interval` is in milliseconds, 
-/// the `baseShowTime` and `depthStepShowTime` are in microseconds.
-void setupDisplayTicker(Mode mode, uint8_t interval, uint8_t baseShowTime, uint8_t depthStepShowTime)
+/// The `interval` is in milliseconds, `showTime` are in microseconds.
+void setupDisplayTicker(Mode mode, uint8_t interval, uint8_t showTime)
 {
 	displayTicker.detach();
 
 	// Warn about invalid show-time and interval ratio, which causes hang ups
-	auto expected = baseShowTime + depthStepShowTime * (1 << display.colorDepth());
+	auto expected = showTime * (1 << display.colorDepth());
 	switch (mode) {
 		case Mode::None: Serial.println(F("Display timer disabled")); return;
 		case Mode::Steps: break;
@@ -55,18 +53,18 @@ void setupDisplayTicker(Mode mode, uint8_t interval, uint8_t baseShowTime, uint8
 
 	switch (mode) {
 		case Mode::Steps:
-			displayTicker.attach_ms(interval, [baseShowTime, depthStepShowTime] {
-				display.displayStep(baseShowTime, depthStepShowTime);
+			displayTicker.attach_ms(interval, [showTime] {
+				display.displayStep(showTime);
 			});
 			break;
 		case Mode::SingleColorDepth:
-			displayTicker.attach_ms(interval, [baseShowTime, depthStepShowTime] {
-				display.displaySingleColorDepth(baseShowTime, depthStepShowTime);
+			displayTicker.attach_ms(interval, [showTime] {
+				display.displaySingleColorDepth(showTime);
 			});
 			break;
 		case Mode::Everything:
-			displayTicker.attach_ms(interval, [baseShowTime, depthStepShowTime] {
-				display.displayEverything(baseShowTime, depthStepShowTime);
+			displayTicker.attach_ms(interval, [showTime] {
+				display.displayEverything(showTime);
 			});
 			break;
 		default:
@@ -87,7 +85,7 @@ void setup()
 	// Initialize display
 	display.begin();
 	display.fillScreen(0); // black
-	setupDisplayTicker(mode, interval, baseShowTime, depthStepShowTime);
+	setupDisplayTicker(mode, interval, showTime);
 #ifdef DEBUG_DISPLAY_SHOW_TIME
 	display.resetDebugCounters();
 #endif
@@ -173,19 +171,15 @@ void loop()
 				if (*p) {
 					if (line[0] == 'i') {
 						interval = strtoul(p + 1, nullptr, 10);
-						setupDisplayTicker(mode, interval, baseShowTime, depthStepShowTime);
+						setupDisplayTicker(mode, interval, showTime);
 					}
-					else if (line[0] == 'b') {
-						baseShowTime = strtoul(p + 1, nullptr, 10);
-						setupDisplayTicker(mode, interval, baseShowTime, depthStepShowTime);
-					}
-					else if (line[0] == 'd') {
-						depthStepShowTime = strtoul(p + 1, nullptr, 10);
-						setupDisplayTicker(mode, interval, baseShowTime, depthStepShowTime);
+					else if (line[0] == 't') {
+						showTime = strtoul(p + 1, nullptr, 10);
+						setupDisplayTicker(mode, interval, showTime);
 					}
 					else if (line[0] == 'm') {
 						mode = static_cast<Mode>(strtoul(p + 1, nullptr, 10));
-						setupDisplayTicker(mode, interval, baseShowTime, depthStepShowTime);
+						setupDisplayTicker(mode, interval, showTime);
 					}
 					else if (line[0] == 'e') {
 						unsigned int example = strtoul(p + 1, nullptr, 10);
