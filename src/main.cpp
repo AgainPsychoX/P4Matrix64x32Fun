@@ -22,6 +22,8 @@ Ticker displayTicker;
 
 OneWire oneWire;
 DallasTemperature oneWireThermometers(&oneWire);
+DeviceAddress thermometerAddress; // OneWire address of the single DS18B20
+
 float localTemperature = 0; // avg of last and current read (simplest noise reduction)
 
 enum class Mode : uint8_t
@@ -162,19 +164,37 @@ void setup()
 #endif
 
 	// Initialize thermometer(s)
-	oneWire.begin(D3);
-	oneWireThermometers.begin();
-	oneWireThermometers.requestTemperatures();
-	float t = oneWireThermometers.getTempCByIndex(0);
-	if (t == DEVICE_DISCONNECTED_C) {
-		Serial.println(F("[Temperature] Not connected"));
+	{
+		oneWire.begin(D3);
+		oneWireThermometers.begin();
+		oneWireThermometers.setWaitForConversion(false);
+		oneWire.reset_search();
+		bool found = false;
+		while (oneWire.search(thermometerAddress)) {
+			if (oneWireThermometers.validAddress(thermometerAddress)) {
+				if (oneWireThermometers.validFamily(thermometerAddress)) {
+					found = true;
+					break;
+				}
+			}
+		}
+		if (found) {
+			float t = oneWireThermometers.getTempC(thermometerAddress);
+			if (t == DEVICE_DISCONNECTED_C) {
+				Serial.println(F("[Temperature] Not connected"));
+			}
+			else {
+				localTemperature = t;
+				Serial.printf_P(PSTR("[Temperature] First read: %.1f"), localTemperature);
+			}
+			oneWireThermometers.setWaitForConversion(false);
+			oneWireThermometers.requestTemperatures();
+		}
+		else {
+			Serial.println(F("[Temperature] No OneWire device found"));
+		}
+
 	}
-	else {
-		localTemperature = t;
-		Serial.printf_P(PSTR("[Temperature] First read: %.1f"), localTemperature);
-	}
-	oneWireThermometers.setWaitForConversion(false);
-	oneWireThermometers.requestTemperatures();
 }
 
 void loop()
@@ -252,13 +272,13 @@ void loop()
 	// Update thermometer
 	if (oneWireThermometers.isConversionComplete()) {
 		// Update thermometer read
-		float t = oneWireThermometers.getTempCByIndex(0);
+		float t = oneWireThermometers.getTempC(thermometerAddress);;
 		if (t != DEVICE_DISCONNECTED_C) {
 			localTemperature = (localTemperature + t) / 2;
 		}
 
 		now = micros() - now;
-		Serial.print(F("getTempCByIndex: ")); Serial.print(now);
+		Serial.print(F("getTempC: ")); Serial.print(now);
 		now = micros();
 
 		oneWireThermometers.requestTemperatures();
