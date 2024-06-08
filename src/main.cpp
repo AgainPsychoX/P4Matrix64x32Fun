@@ -1,3 +1,4 @@
+#include <DallasTemperature.h> // for DS18B20 thermometer
 #include <MyPxMatrix.hpp>
 #include <Ticker.h>
 #include <colors.hpp>
@@ -19,6 +20,10 @@ MyPxMatrix<
 
 Ticker displayTicker;
 
+OneWire oneWire;
+DallasTemperature oneWireThermometers(&oneWire);
+float localTemperature = 0; // avg of last and current read (simplest noise reduction)
+
 enum class Mode : uint8_t
 {
 	None,
@@ -29,7 +34,7 @@ enum class Mode : uint8_t
 
 Mode mode = Mode::SingleColorDepth;
 uint8_t interval = 4;
-uint16_t showTime = 400;
+uint16_t showTime = 100;
 
 /// Setups display ticker for specified settings.
 /// The `interval` is in milliseconds, `showTime` is in CPU cycles.
@@ -143,7 +148,7 @@ void setup()
 	delay(1000);
 
 	// Initialize Serial console
-	Serial.begin(115200);
+	Serial.begin(921600);
 	Serial.println(F("\033[2J\nHello!")); // clears serial output garbage
 	delay(1000);
 
@@ -155,6 +160,21 @@ void setup()
 #ifdef DEBUG_DISPLAY_SHOW_TIME
 	display.resetDebugCounters();
 #endif
+
+	// Initialize thermometer(s)
+	oneWire.begin(D3);
+	oneWireThermometers.begin();
+	oneWireThermometers.requestTemperatures();
+	float t = oneWireThermometers.getTempCByIndex(0);
+	if (t == DEVICE_DISCONNECTED_C) {
+		Serial.println(F("[Temperature] Not connected"));
+	}
+	else {
+		localTemperature = t;
+		Serial.printf_P(PSTR("[Temperature] First read: %.1f"), localTemperature);
+	}
+	oneWireThermometers.setWaitForConversion(false);
+	oneWireThermometers.requestTemperatures();
 }
 
 void loop()
@@ -226,5 +246,34 @@ void loop()
 			Serial.println(F("Line too long"));
 			lineLength = 0;
 		}
+	}
+
+	unsigned long now = micros();
+	// Update thermometer
+	if (oneWireThermometers.isConversionComplete()) {
+		// Update thermometer read
+		float t = oneWireThermometers.getTempCByIndex(0);
+		if (t != DEVICE_DISCONNECTED_C) {
+			localTemperature = (localTemperature + t) / 2;
+		}
+
+		now = micros() - now;
+		Serial.print(F("getTempCByIndex: ")); Serial.print(now);
+		now = micros();
+
+		oneWireThermometers.requestTemperatures();
+
+		now = micros() - now;
+		Serial.print(F("\trequestTemperatures: ")); Serial.print(now);
+		now = micros();
+
+		// Update display
+		examples::drawHorizontalGradient();
+		display.setTextColor(0);
+		display.setCursor(1, 1);
+		display.printf("%.1f'C", localTemperature);
+
+		now = micros() - now;
+		Serial.print(F("\tdisplay draw: ")); Serial.println(now);
 	}
 }
