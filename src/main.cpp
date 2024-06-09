@@ -52,6 +52,7 @@ uint16_t showTime = 100;
 unsigned long displayTickCounter = 0;
 unsigned long displayTickTimeSum = 0;
 #endif
+uint8_t example = 1;
 
 /// Setups display ticker for specified settings.
 /// The `interval` is in milliseconds, `showTime` is in CPU cycles.
@@ -273,23 +274,7 @@ void loop()
 						setupDisplayTicker(mode, interval, showTime);
 					}
 					else if (line[0] == 'e') {
-						unsigned int example = strtoul(p + 1, nullptr, 10);
-						unsigned long start = micros();
-						switch (example) {
-							case 0: display.fillScreen(0); break;
-							case 1: examples::drawHorizontalGradient(); break;
-							case 2: examples::drawVerticalGradient(); break;
-							case 3: examples::draw2DGradient(); break;
-							case 4: examples::drawThreeStripesAngled(); break;
-							case 5: examples::drawSingleColorGradients(11); break;
-							case 6: examples::drawSingleColorGradients(6); break;
-							case 7: examples::drawSingleColorGradients(0); break;
-							case 8: examples::drawWhiteGradients(); break;
-							default:
-								Serial.println(F("Example not found"));
-								break;
-						}
-						Serial.printf("Draw time: %lu us\n", micros() - start);
+						example = strtoul(p + 1, nullptr, 10);
 					}
 					else {
 						Serial.println(F("Unknown assignment"));
@@ -401,7 +386,17 @@ void loop()
 		now = micros();
 
 		// Update display
-		examples::drawHorizontalGradient();
+		switch (example) {
+			case 0: display.fillScreen(0); break;
+			case 1: examples::drawHorizontalGradient(); break;
+			case 2: examples::drawVerticalGradient(); break;
+			case 3: examples::draw2DGradient(); break;
+			case 4: examples::drawThreeStripesAngled(); break;
+			case 5: examples::drawSingleColorGradients(11); break;
+			case 6: examples::drawSingleColorGradients(6); break;
+			case 7: examples::drawSingleColorGradients(0); break;
+			case 8: examples::drawWhiteGradients(); break;
+		}
 		display.setTextColor(0);
 		display.setCursor(1, 1);
 		display.print(buffer);
