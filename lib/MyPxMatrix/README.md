@@ -1,7 +1,7 @@
 
-[Original PxMatrix](https://github.com/2dom/PxMatrix) works for me, but feels slow and there seem to be too much flicker, so this mini-library is attempt to mitigate that.
+# P4 Matrix 64x32 LED display driver
 
-<!-- TODO: link; original (working) settings for PxMatrix; -->
+[Original PxMatrix](https://github.com/2dom/PxMatrix) works for me, but feels slow and there seem to be too much flicker, so this mini-library is attempt to mitigate that.
 
 Hardware:
 + [P4 Matrix 64x32 LED display (`P4-1921-64x32-8S-S1`)](https://vi.aliexpress.com/item/1005005293054289.html)
@@ -50,7 +50,20 @@ HUB75:
 +-----+-----+
 ```
 
+### Other
+
++ There is [nice RGB565 color picker](https://rgbcolorpicker.com/565) online.
+
 ### To-do
 
 + Double buffer
+	+ Mode 1. Buffering encoded ready to display to the screen.
+	+ Mode 2. Buffering as original (RGB565 / `uint16_t`) then bulk encoding.
+	+ Mode 3. Like mode 2., but use dirty flags to allow partial encoding.
 + Possible more optimizations? See https://github.com/2dom/PxMatrix/pull/24/commits/bf9898040d1f3f7aecc212b3178603b773aacfd6
+	+ Byte by byte placement instead bit by bit. The `drawPixel` still uses bit by bit; then bit by bit uses byte by byte.
+	+ Specialized functions for lines: `drawFastHLine` and `drawFastVLine`, maybe `fillRect`.
+	+ Some other specialized functions.
++ For debug in `displayStep`: count cycles instead microseconds (can use `ESP.getCycleCount()` under ESP8266) & try balance the `if`s
++ Allow color depth to be run-time configurable (doesn't seem to be critical for performance
++ Test (and adapt) the display library to lower C++ standard.
