@@ -1,4 +1,4 @@
-#include <DallasTemperature.h> // for DS18B20 thermometer
+#include <OneWire.h>
 #include <MyPxMatrix.hpp>
 #include <Ticker.h>
 #include <colors.hpp>
@@ -21,10 +21,21 @@ MyPxMatrix<
 Ticker displayTicker;
 
 OneWire oneWire;
-DallasTemperature oneWireThermometers(&oneWire);
-DeviceAddress thermometerAddress; // OneWire address of the single DS18B20
+union OneWireDeviceAddress 
+{
+	uint8_t raw[8];
+	struct {
+		uint8_t family;
+		uint8_t serial[6];
+		uint8_t crc;
+	};
 
-float localTemperature = 0; // avg of last and current read (simplest noise reduction)
+	operator uint8_t* () { return raw; }
+};
+constexpr bool singleOneWireDevice = true;
+
+OneWireDeviceAddress thermometerAddress; // the single DS18B20
+constexpr uint8_t thermometerResolution = 12;
 
 enum class Mode : uint8_t
 {
@@ -163,37 +174,66 @@ void setup()
 	display.resetDebugCounters();
 #endif
 
-	// Initialize thermometer(s)
+	// Initialize the thermometer
 	{
-		oneWire.begin(D3);
-		oneWireThermometers.begin();
-		oneWireThermometers.setWaitForConversion(false);
+		oneWire.begin(D3); // prepares the OneWire, incl. resetting search
+		oneWire.search(thermometerAddress); // extra dummy search sometimes required idk why
 		oneWire.reset_search();
+
 		bool found = false;
 		while (oneWire.search(thermometerAddress)) {
-			if (oneWireThermometers.validAddress(thermometerAddress)) {
-				if (oneWireThermometers.validFamily(thermometerAddress)) {
+			Serial.printf_P(PSTR("[OneWire] Found device, family %02x\n"), thermometerAddress.family);
+			if (oneWire.crc8(thermometerAddress, 7) == thermometerAddress.crc) {
+				if (thermometerAddress.family == 0x28 /* DS18B20 */) {
 					found = true;
 					break;
 				}
 			}
 		}
 		if (found) {
-			float t = oneWireThermometers.getTempC(thermometerAddress);
-			if (t == DEVICE_DISCONNECTED_C) {
-				Serial.println(F("[Temperature] Not connected"));
+			Serial.println(F("[Temperature] DS18B20 found"));
+
+			// Read scratch pad
+			uint8_t scratchPad[9];
+			oneWire.reset();
+			if (singleOneWireDevice)
+				oneWire.skip();
+			else
+				oneWire.select(thermometerAddress);
+			oneWire.write(0xBE);
+			oneWire.read_bytes(scratchPad, 9);
+
+			// Print scratch pad for debugging
+			Serial.print(F("[Temperature] Scratch pad: "));
+			for (unsigned int i = 0; i < sizeof(scratchPad); i++) {
+				Serial.printf_P(PSTR("%02X "), scratchPad[i]);
 			}
-			else {
-				localTemperature = t;
-				Serial.printf_P(PSTR("[Temperature] First read: %.1f"), localTemperature);
-			}
-			oneWireThermometers.setWaitForConversion(false);
-			oneWireThermometers.requestTemperatures();
+			Serial.println();
+
+			// Write scratch pad with selected resolution
+			oneWire.reset();
+			if (singleOneWireDevice)
+				oneWire.skip();
+			else
+				oneWire.select(thermometerAddress);
+			oneWire.write(0x4E);
+			oneWire.write(scratchPad[2]); // pass low alarm temperature
+			oneWire.write(scratchPad[3]); // pass high alarm temperature
+			oneWire.write(0b11111 | ((thermometerResolution - 9) << 5));
+
+			// Start conversion
+			oneWire.reset();
+			if (singleOneWireDevice)
+				oneWire.skip();
+			else
+				oneWire.select(thermometerAddress);
+			oneWire.write(0x44);
+
+			Serial.println(F("[Temperature] DS18B20 setup done"));
 		}
 		else {
-			Serial.println(F("[Temperature] No OneWire device found"));
+			Serial.println(F("[Temperature] DS18B20 missing"));
 		}
-
 	}
 }
 
@@ -269,29 +309,86 @@ void loop()
 	}
 
 	unsigned long now = micros();
-	// Update thermometer
-	if (oneWireThermometers.isConversionComplete()) {
-		// Update thermometer read
-		float t = oneWireThermometers.getTempC(thermometerAddress);;
-		if (t != DEVICE_DISCONNECTED_C) {
-			localTemperature = (localTemperature + t) / 2;
-		}
+	// When conversion is complete, update thermometer
+	if (oneWire.read_bit()) {
+		// Read temperature fast (2 first bytes of scratch pad)
+		// This will skip CRC.
+		oneWire.reset();
+		if (singleOneWireDevice)
+			oneWire.skip();
+		else
+			oneWire.select(thermometerAddress);
+		oneWire.write(0xBE);
+		uint8_t lsb = oneWire.read();
+		uint8_t msb = oneWire.read();
+		int16_t raw = (msb << 8) | lsb;
+
+		// Convert
+		bool sign = msb >> 7;
+		raw = sign ? -raw : raw;
+		static const char digitAfterCommaLookup[16] = {
+			'0', // 0       
+			'1', // 0.0625  
+			'1', // 0.125   
+			'2', // 0.1875  
+			'3', // 0.25    
+			'3', // 0.3125  
+			'4', // 0.375   
+			'4', // 0.4375  
+			'5', // 0.5     
+			'6', // 0.5625  
+			'6', // 0.625   
+			'7', // 0.6875  
+			'8', // 0.75    
+			'8', // 0.8125  
+			'9', // 0.875   
+			'9', // 0.9375  
+		};
+		char digitAfterComma = digitAfterCommaLookup[raw & 0b1111];
+		raw = raw >> 4;
+		char buffer[8];
+		char* p = buffer;
+		if (raw >= 10) *p++ = '0' + (raw / 10);
+		*p++ = '0' + (raw % 10);
+		*p++ = '.';
+		*p++ = digitAfterComma;
+		*p++ = '\'';
+		*p++ = 'C';
+		*p = 0;
 
 		now = micros() - now;
 		Serial.print(F("getTempC: ")); Serial.print(now);
 		now = micros();
 
-		oneWireThermometers.requestTemperatures();
+		optimistic_yield(1024);
+
+		now = micros() - now;
+		Serial.print(F(" after 1st yield: ")); Serial.print(now);
+		now = micros();
+
+		// Start conversion
+		oneWire.reset();
+		if (singleOneWireDevice)
+			oneWire.skip();
+		else
+			oneWire.select(thermometerAddress);
+		oneWire.write(0x44);
 
 		now = micros() - now;
 		Serial.print(F("\trequestTemperatures: ")); Serial.print(now);
+		now = micros();
+
+		yield();
+
+		now = micros() - now;
+		Serial.print(F(" after 2nd yield: ")); Serial.print(now);
 		now = micros();
 
 		// Update display
 		examples::drawHorizontalGradient();
 		display.setTextColor(0);
 		display.setCursor(1, 1);
-		display.printf("%.1f'C", localTemperature);
+		display.print(buffer);
 
 		now = micros() - now;
 		Serial.print(F("\tdisplay draw: ")); Serial.println(now);
