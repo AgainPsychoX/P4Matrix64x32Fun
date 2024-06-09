@@ -48,41 +48,51 @@ enum class Mode : uint8_t
 Mode mode = Mode::SingleColorDepth;
 uint8_t interval = 4;
 uint16_t showTime = 100;
+#ifdef DEBUG_DISPLAY_SHOW_TIME
+unsigned long displayTickCounter = 0;
+unsigned long displayTickTimeSum = 0;
+#endif
 
 /// Setups display ticker for specified settings.
 /// The `interval` is in milliseconds, `showTime` is in CPU cycles.
 void setupDisplayTicker(Mode mode, uint8_t interval, uint16_t showTime)
 {
 	displayTicker.detach();
-
-	// Warn about invalid show-time and interval ratio, which causes hang ups
-	auto expected = showTime * (1 << display.colorDepth());
-	switch (mode) {
-		case Mode::None: Serial.println(F("Display timer disabled")); return;
-		case Mode::Steps: break;
-		case Mode::SingleColorDepth: expected *= 2; break;
-		case Mode::Everything: expected *= 2 * display.colorDepth(); break;
-	}
-	if (interval * 1000 <= expected) {
-		Serial.println(F("Display interval might be too small for specified show time"));
-	}
-	const auto p = static_cast<float>(-expected) / static_cast<float>(interval * 10);
-	Serial.printf("Estimated performance hit: %.2f%%\n", p);
-
 	switch (mode) {
 		case Mode::Steps:
 			displayTicker.attach_ms(interval, [showTime] {
+#ifdef DEBUG_DISPLAY_SHOW_TIME
+				unsigned long now = micros();
 				display.displayStep(showTime);
+				displayTickTimeSum += micros() - now;
+				displayTickCounter++;
+#else
+				display.displayStep(showTime);
+#endif
 			});
 			break;
 		case Mode::SingleColorDepth:
 			displayTicker.attach_ms(interval, [showTime] {
+#ifdef DEBUG_DISPLAY_SHOW_TIME
+				unsigned long now = micros();
 				display.displaySingleColorDepth(showTime);
+				displayTickTimeSum += micros() - now;
+				displayTickCounter++;
+#else
+				display.displaySingleColorDepth(showTime);
+#endif
 			});
 			break;
 		case Mode::Everything:
 			displayTicker.attach_ms(interval, [showTime] {
+#ifdef DEBUG_DISPLAY_SHOW_TIME
+				unsigned long now = micros();
 				display.displayEverything(showTime);
+				displayTickTimeSum += micros() - now;
+				displayTickCounter++;
+#else
+				display.displayEverything(showTime);
+#endif
 			});
 			break;
 		default:
@@ -290,6 +300,12 @@ void loop()
 #ifdef DEBUG_DISPLAY_SHOW_TIME
 						display.printDebugCounters();
 						display.resetDebugCounters();
+
+						Serial.printf(
+							"displayTickCounter=%lu\ndisplayTickTimeSum=%lu\n", 
+							displayTickCounter, displayTickTimeSum);
+						displayTickCounter = 0;
+						displayTickTimeSum = 0;
 #endif
 					}
 					else {
