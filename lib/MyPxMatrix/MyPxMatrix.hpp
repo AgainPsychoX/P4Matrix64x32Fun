@@ -182,10 +182,35 @@ public:
 		}
 	}
 
-	// virtual void drawFastVLine(int16_t x, int16_t y, int16_t h, uint16_t color) override
-	// {
-	// 	// FIXME: implement me
-	// }
+	__attribute__((flatten))
+	virtual void drawFastVLine(int16_t x_, int16_t y1_, int16_t h, uint16_t color) override
+	{
+		if (x_ < 0 || x_ >= constWidth || y1_ >= constHeight || h <= 0)
+			return;
+		if (y1_ < 0) {
+			h += y1_;
+			if (h <= 0)
+				return;
+			y1_ = 0;
+		}
+		const auto y2_ = std::min(y1_ + h - 1, constHeight - 1);
+
+		// Casting to unsigned and fast types really helps here a tiny bit.
+		// Also, allow for flipping; note X axis is flipped by default.
+		const uint_fast16_t x = flipX ? x_ : constWidth - 1 - x_;
+		const uint_fast16_t y1 = flipY ? constHeight - 1 - y1_ : y1_;
+		const uint_fast16_t y2 = flipY ? constHeight - 1 - y2_ : y2_;
+
+		const uint_fast16_t xByte = x / 8;
+		const uint_fast8_t xBit = x % 8;
+		const uint8_t mask = 1 << xBit;
+
+		const auto rgb = prepareColorComponents(color);
+		for (uint_fast16_t y = y1; y <= y2; y++) {
+			uint8_t* pointer = getRowPointer(y) - xByte;
+			setByteInBuffer(pointer, rgb, mask);
+		}
+	}
 
 	////////////////////////////////////////
 	// Drawing support
