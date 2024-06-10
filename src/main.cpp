@@ -174,6 +174,17 @@ void drawOrthogonalLines()
 	}
 }
 
+void drawFilledRectangles()
+{
+	display.fillScreen(0b0000100001000001);
+	for (auto& i : {23, 17, 13, 9, 7, 5, 3, 0}) {
+		const auto w = 2 + i * 2;
+		const auto h = 2 + i * 3 / 2;
+		const uint16_t c = colors::to565(colors::HSL{static_cast<float>(i) * 20, 100, 50});
+		display.fillRect(i * 3 / 2, display.height() - w, w, h, c);
+	}
+}
+
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -408,6 +419,7 @@ void loop()
 			case 7: examples::drawSingleColorGradients(0); break;
 			case 8: examples::drawWhiteGradients(); break;
 			case 9: examples::drawOrthogonalLines(); break;
+			case 10: examples::drawFilledRectangles(); break;
 		}
 		display.setTextColor(0);
 		display.setCursor(1, 1);

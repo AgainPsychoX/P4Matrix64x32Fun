@@ -145,20 +145,18 @@ public:
 
 		const uint_fast16_t x1Byte = x1 / 8;
 		const uint_fast16_t x2Byte = x2 / 8;
-
-		uint8_t* basePointer = getRowPointer(y);
-		const auto rgb = prepareColorComponents(color);
-
 		const auto x1Bit = x1 % 8;
 		const auto x2Bit = x2 % 8;
 		const uint8_t x1Mask = 0xFF >> (7 - x1Bit);
 		const uint8_t x2Mask = 0xFF << x2Bit;
 
+		uint8_t* basePointer = getRowPointer(y);
+		const auto rgb = prepareColorComponents(color);
+
 		// Handle case where the line is single byte
 		if (x1Byte == x2Byte) {
 			uint8_t mask = x1Mask & x2Mask;
 			uint8_t* pointer = basePointer - x1Byte;
-
 			setByteInBuffer(pointer, rgb, mask);
 		}
 		else /* multi-byte */ {
@@ -210,6 +208,75 @@ public:
 			uint8_t* pointer = getRowPointer(y) - xByte;
 			setByteInBuffer(pointer, rgb, mask);
 		}
+	}
+
+	__attribute__((flatten))
+	virtual void fillRect(int16_t x1_, int16_t y1_, int16_t w, int16_t h, uint16_t color) override
+	{
+		if (x1_ >= constWidth || y1_ >= constHeight || w <= 0 || h <= 0)
+			return;
+		if (x1_ < 0) {
+			w += x1_;
+			if (w <= 0)
+				return;
+			x1_ = 0;
+		}
+		if (y1_ < 0) {
+			h += y1_;
+			if (h <= 0)
+				return;
+			y1_ = 0;
+		}
+		const auto x2_ = std::min(x1_ + w - 1, constWidth - 1);
+		const auto y2_ = std::min(y1_ + h - 1, constHeight - 1);
+
+		// Casting to unsigned and fast types really helps here a tiny bit.
+		// Also, allow for flipping; note X axis is flipped by default.
+		const uint_fast16_t x1 = flipX ? x1_ : constWidth - 1 - x1_;
+		const uint_fast16_t x2 = flipX ? x2_ : constWidth - 1 - x2_;
+		const uint_fast16_t y1 = flipY ? constHeight - 1 - y1_ : y1_;
+		const uint_fast16_t y2 = flipY ? constHeight - 1 - y2_ : y2_;
+
+		const uint_fast16_t x1Byte = x1 / 8;
+		const uint_fast16_t x2Byte = x2 / 8;
+		const auto x1Bit = x1 % 8;
+		const auto x2Bit = x2 % 8;
+		const uint8_t x1Mask = 0xFF >> (7 - x1Bit);
+		const uint8_t x2Mask = 0xFF << x2Bit;
+
+		const auto rgb = prepareColorComponents(color);
+
+		// Handle case where the line is single byte
+		if (x1Byte == x2Byte) {
+			uint8_t mask = x1Mask & x2Mask;
+			for (uint_fast16_t y = y1; y <= y2; y++) {
+				uint8_t* pointer = getRowPointer(y) - x1Byte;
+				setByteInBuffer(pointer, rgb, mask);
+			}
+		}
+		else /* multi-byte */ {
+			for (uint_fast16_t y = y1; y <= y2; y++) {
+				// Set pointer to first byte, and calculate last byte pointer.
+				// Note the inverse order, because `x1Byte > x2Byte` always true.
+				uint8_t* basePointer = getRowPointer(y);
+				uint8_t* pointer = basePointer - x1Byte;
+				uint8_t* last = basePointer - x2Byte;
+
+				// First byte
+				setByteInBuffer(pointer, rgb, x1Mask);
+				pointer++;
+
+				// Full bytes (if any)
+				while (pointer < last) {
+					setByteInBuffer(pointer, rgb);
+					pointer++;
+				}
+
+				// Last byte
+				setByteInBuffer(pointer, rgb, x2Mask);
+			}
+		}
+		// TODO: a bit of code shared with `drawFastHLine`, fix it somehow?
 	}
 
 	////////////////////////////////////////

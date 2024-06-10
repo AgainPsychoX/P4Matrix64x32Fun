@@ -62,7 +62,7 @@ HUB75:
 	+ Mode 2. Buffering as original (RGB565 / `uint16_t`) then bulk encoding.
 	+ Mode 3. Like mode 2., but use dirty flags to allow partial encoding.
 + Possible more optimizations? See https://github.com/2dom/PxMatrix/pull/24/commits/bf9898040d1f3f7aecc212b3178603b773aacfd6
-	+ Specialized `fillRect`
+	+ Somehow, `fillRect` is only slightly slower to `drawRect` (not filled), despite huge number of pixels drawn difference. Investigate why.
 	+ Some other specialized functions?
 + For debug in `displayStep`: count cycles instead microseconds (can use `ESP.getCycleCount()` under ESP8266) & try balance the `if`s
 + Allow color depth to be run-time configurable (doesn't seem to be critical for performance
