@@ -149,10 +149,14 @@ public:
 
 	virtual void drawFastHLine(int16_t x1_, int16_t y_, int16_t w, uint16_t color) override
 	{
-		// TODO: limit the line instead skipping
-		if (x1_ < 0 || x1_ >= constWidth || y_ < 0 || y_ >= constHeight || w <= 0)
+		if (x1_ >= constWidth || y_ < 0 || y_ >= constHeight || w <= 0)
 			return;
-
+		if (x1_ < 0) {
+			w += x1_;
+			if (w <= 0)
+				return;
+			x1_ = 0;
+		}
 		const auto x2_ = std::min(x1_ + w - 1, constWidth - 1);
 
 		// Casting to unsigned and fast types really helps here a tiny bit.
@@ -165,12 +169,18 @@ public:
 		const uint_fast16_t x2Byte = x2 / 8;
 
 #ifdef DISPLAY_ROW_POINTERS_OPTIMIZATION
+		uint8_t* basePointer = rowsPointers[y];
 		static constexpr auto rOffset = -patternColorBytes * 0;
 		static constexpr auto gOffset = -patternColorBytes * 1;
 		static constexpr auto bOffset = -patternColorBytes * 2;
 #else // ifndef DISPLAY_ROW_POINTERS_OPTIMIZATION
-		static_assert(false); // FIXME: implement me
-#endif
+		uint8_t* basePointer = buffer;
+		const int_fast32_t rOffset = 0
+			+ (sendBufferSize - 1) + (y % constRowPattern) * sendBufferSize
+			- panelWidthBytes * (y / constRowPattern);
+		const int_fast32_t gOffset = rOffset - patternColorBytes;
+		const int_fast32_t bOffset = gOffset - patternColorBytes;
+#endif // ifndef DISPLAY_ROW_POINTERS_OPTIMIZATION
 
 		// Prepare colors (see `drawPixel` source for details)
 		const uint_fast8_t r = color >> 11 >> (5 - constColorDepth);
@@ -181,10 +191,11 @@ public:
 		const auto x2Bit = x2 % 8;
 		const uint8_t x1Mask = 0xFF >> (7 - x1Bit);
 		const uint8_t x2Mask = 0xFF << x2Bit;
+
 		// Handle case where the line is single byte
 		if (x1Byte == x2Byte) {
 			uint8_t mask = x1Mask & x2Mask;
-			uint8_t* pointer = rowsPointers[y] - x1Byte;
+			uint8_t* pointer = basePointer - x1Byte;
 
 			#pragma GCC unroll 5
 			for (uint_fast8_t i = 0; i < constColorDepth; i++) {
@@ -209,8 +220,8 @@ public:
 		else /* multi-byte */ {
 			// Set pointer to first byte, and calculate last byte pointer.
 			// Note the inverse order, because `x1Byte > x2Byte` always true.
-			uint8_t* pointer = rowsPointers[y] - x1Byte;
-			uint8_t* last = rowsPointers[y] - x2Byte;
+			uint8_t* pointer = basePointer - x1Byte;
+			uint8_t* last = basePointer - x2Byte;
 
 			// First byte
 			#pragma GCC unroll 5
