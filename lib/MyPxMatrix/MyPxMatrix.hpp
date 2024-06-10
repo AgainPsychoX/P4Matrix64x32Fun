@@ -40,6 +40,18 @@ class MyPxMatrix : public Adafruit_GFX
 	uint8_t* rowsPointers[constHeight];
 #endif // DISPLAY_ROW_POINTERS_OPTIMIZATION
 
+	__attribute__((always_inline))
+	inline uint8_t* getRowPointer(uint8_t y)
+	{
+#ifdef DISPLAY_ROW_POINTERS_OPTIMIZATION
+		return rowsPointers[y];
+#else
+		return buffer
+			+ (sendBufferSize - 1) + (y % constRowPattern) * sendBufferSize
+			- panelWidthBytes * (y / constRowPattern);
+#endif
+	}
+
 public:
 	bool flipX = false;
 	bool flipY = false;
@@ -93,6 +105,7 @@ public:
 	////////////////////////////////////////
 	// Drawing overrides
 
+	__attribute__((flatten))
 	virtual void drawPixel(int16_t x_, int16_t y_, uint16_t color) override
 	{
 		if (x_ < 0 || x_ >= constWidth || y_ < 0 || y_ >= constHeight)
@@ -106,47 +119,12 @@ public:
 		const uint_fast16_t xByte = x / 8;
 		const uint_fast8_t xBit = x % 8;
 
-#ifdef DISPLAY_ROW_POINTERS_OPTIMIZATION
-		uint8_t* pointer = rowsPointers[y] - xByte;
-		static constexpr auto rOffset = -patternColorBytes * 0;
-		static constexpr auto gOffset = -patternColorBytes * 1;
-		static constexpr auto bOffset = -patternColorBytes * 2;
-#else // ifndef DISPLAY_ROW_POINTERS_OPTIMIZATION
-		uint8_t* pointer = buffer;
-		const int_fast32_t rOffset = 0
-			+ (sendBufferSize - 1) + (y % constRowPattern) * sendBufferSize
-			- panelWidthBytes * (y / constRowPattern) - xByte;
-		const int_fast32_t gOffset = rOffset - patternColorBytes;
-		const int_fast32_t bOffset = gOffset - patternColorBytes;
-#endif // ifndef DISPLAY_ROW_POINTERS_OPTIMIZATION
-
-		// Convert RGB565 to components with 5 bit precision (only 5 LSB used),
-		// then down to defined color depth. 6th bit of green is always ignored.
-		const uint_fast8_t r = color >> 11 >> (5 - constColorDepth);
-		const uint_fast8_t g = color >>  6 >> (5 - constColorDepth);
-		const uint_fast8_t b = color /***/ >> (5 - constColorDepth);
-
-		#pragma GCC unroll 5
-		for (uint_fast8_t i = 0; i < constColorDepth; i++) {
-			const size_t depthBufferOffset = noDepthBufferSize * i;
-
-			if ((r >> i) & 1)
-				pointer[depthBufferOffset + rOffset] |= 1 << xBit;
-			else
-				pointer[depthBufferOffset + rOffset] &= ~(1 << xBit);
-
-			if ((g >> i) & 1)
-				pointer[depthBufferOffset + gOffset] |= 1 << xBit;
-			else
-				pointer[depthBufferOffset + gOffset] &= ~(1 << xBit);
-
-			if ((b >> i) & 1)
-				pointer[depthBufferOffset + bOffset] |= 1 << xBit;
-			else
-				pointer[depthBufferOffset + bOffset] &= ~(1 << xBit);
-		}
+		uint8_t* pointer = getRowPointer(y) - xByte;
+		const auto rgb = prepareColorComponents(color);
+		setByteInBuffer(pointer, rgb, 1 << xBit);
 	}
 
+	__attribute__((flatten))
 	virtual void drawFastHLine(int16_t x1_, int16_t y_, int16_t w, uint16_t color) override
 	{
 		if (x1_ >= constWidth || y_ < 0 || y_ >= constHeight || w <= 0)
@@ -168,24 +146,8 @@ public:
 		const uint_fast16_t x1Byte = x1 / 8;
 		const uint_fast16_t x2Byte = x2 / 8;
 
-#ifdef DISPLAY_ROW_POINTERS_OPTIMIZATION
-		uint8_t* basePointer = rowsPointers[y];
-		static constexpr auto rOffset = -patternColorBytes * 0;
-		static constexpr auto gOffset = -patternColorBytes * 1;
-		static constexpr auto bOffset = -patternColorBytes * 2;
-#else // ifndef DISPLAY_ROW_POINTERS_OPTIMIZATION
-		uint8_t* basePointer = buffer;
-		const int_fast32_t rOffset = 0
-			+ (sendBufferSize - 1) + (y % constRowPattern) * sendBufferSize
-			- panelWidthBytes * (y / constRowPattern);
-		const int_fast32_t gOffset = rOffset - patternColorBytes;
-		const int_fast32_t bOffset = gOffset - patternColorBytes;
-#endif // ifndef DISPLAY_ROW_POINTERS_OPTIMIZATION
-
-		// Prepare colors (see `drawPixel` source for details)
-		const uint_fast8_t r = color >> 11 >> (5 - constColorDepth);
-		const uint_fast8_t g = color >>  6 >> (5 - constColorDepth);
-		const uint_fast8_t b = color /***/ >> (5 - constColorDepth);
+		uint8_t* basePointer = getRowPointer(y);
+		const auto rgb = prepareColorComponents(color);
 
 		const auto x1Bit = x1 % 8;
 		const auto x2Bit = x2 % 8;
@@ -197,25 +159,7 @@ public:
 			uint8_t mask = x1Mask & x2Mask;
 			uint8_t* pointer = basePointer - x1Byte;
 
-			#pragma GCC unroll 5
-			for (uint_fast8_t i = 0; i < constColorDepth; i++) {
-				const size_t depthBufferOffset = noDepthBufferSize * i;
-
-				if ((r >> i) & 1)
-					pointer[depthBufferOffset + rOffset] |= mask;
-				else
-					pointer[depthBufferOffset + rOffset] &= ~mask;
-
-				if ((g >> i) & 1)
-					pointer[depthBufferOffset + gOffset] |= mask;
-				else
-					pointer[depthBufferOffset + gOffset] &= ~mask;
-
-				if ((b >> i) & 1)
-					pointer[depthBufferOffset + bOffset] |= mask;
-				else
-					pointer[depthBufferOffset + bOffset] &= ~mask;
-			}
+			setByteInBuffer(pointer, rgb, mask);
 		}
 		else /* multi-byte */ {
 			// Set pointer to first byte, and calculate last byte pointer.
@@ -224,63 +168,18 @@ public:
 			uint8_t* last = basePointer - x2Byte;
 
 			// First byte
-			#pragma GCC unroll 5
-			for (uint_fast8_t i = 0; i < constColorDepth; i++) {
-				const size_t depthBufferOffset = noDepthBufferSize * i;
-
-				if ((r >> i) & 1)
-					pointer[depthBufferOffset + rOffset] |= x1Mask;
-				else
-					pointer[depthBufferOffset + rOffset] &= ~x1Mask;
-
-				if ((g >> i) & 1)
-					pointer[depthBufferOffset + gOffset] |= x1Mask;
-				else
-					pointer[depthBufferOffset + gOffset] &= ~x1Mask;
-
-				if ((b >> i) & 1)
-					pointer[depthBufferOffset + bOffset] |= x1Mask;
-				else
-					pointer[depthBufferOffset + bOffset] &= ~x1Mask;
-			}
+			setByteInBuffer(pointer, rgb, x1Mask);
 			pointer++;
 
 			// Full bytes (if any)
 			while (pointer < last) {
-				#pragma GCC unroll 5
-				for (uint_fast8_t i = 0; i < constColorDepth; i++) {
-					const size_t depthBufferOffset = noDepthBufferSize * i;
-
-					pointer[depthBufferOffset + rOffset] = ((r >> i) & 1) ? 0xFF : 0x00;
-					pointer[depthBufferOffset + gOffset] = ((g >> i) & 1) ? 0xFF : 0x00;
-					pointer[depthBufferOffset + bOffset] = ((b >> i) & 1) ? 0xFF : 0x00;
-				}
+				setByteInBuffer(pointer, rgb);
 				pointer++;
 			}
 
 			// Last byte
-			#pragma GCC unroll 5
-			for (uint_fast8_t i = 0; i < constColorDepth; i++) {
-				const size_t depthBufferOffset = noDepthBufferSize * i;
-
-				if ((r >> i) & 1)
-					pointer[depthBufferOffset + rOffset] |= x2Mask;
-				else
-					pointer[depthBufferOffset + rOffset] &= ~x2Mask;
-
-				if ((g >> i) & 1)
-					pointer[depthBufferOffset + gOffset] |= x2Mask;
-				else
-					pointer[depthBufferOffset + gOffset] &= ~x2Mask;
-
-				if ((b >> i) & 1)
-					pointer[depthBufferOffset + bOffset] |= x2Mask;
-				else
-					pointer[depthBufferOffset + bOffset] &= ~x2Mask;
-			}
+			setByteInBuffer(pointer, rgb, x2Mask);
 		}
-
-		// TODO: remove repeated code, especially the loop, maybe also the color components preparing
 	}
 
 	// virtual void drawFastVLine(int16_t x, int16_t y, int16_t h, uint16_t color) override
@@ -289,11 +188,76 @@ public:
 	// }
 
 	////////////////////////////////////////
+	// Drawing support
+private:
+
+	struct RGBComponents
+	{
+		uint_fast8_t r;
+		uint_fast8_t g;
+		uint_fast8_t b;
+	};
+
+	/// Converts RGB565 to components with 5 bit precision (only 5 LSB used),
+	/// then down to defined color depth. 6th bit of green is always ignored.
+	__attribute__((always_inline))
+	inline RGBComponents prepareColorComponents(uint16_t color) const
+	{
+		const uint_fast8_t r = color >> (11 + (5 - constColorDepth));
+		const uint_fast8_t g = color >>  (6 + (5 - constColorDepth));
+		const uint_fast8_t b = color >>  (0 + (5 - constColorDepth));
+		return { r, g, b };
+	}
+
+	static constexpr auto rOffset = -patternColorBytes * 0;
+	static constexpr auto gOffset = -patternColorBytes * 1;
+	static constexpr auto bOffset = -patternColorBytes * 2;
+
+	__attribute__((always_inline))
+	inline void setByteInBuffer(uint8_t* pointer, const RGBComponents& c)
+	{
+		#pragma GCC unroll 5
+		for (uint_fast8_t i = 0; i < constColorDepth; i++) {
+			const size_t depthBufferOffset = noDepthBufferSize * i;
+
+			pointer[depthBufferOffset + rOffset] = ((c.r >> i) & 1) ? 0xFF : 0x00;
+			pointer[depthBufferOffset + gOffset] = ((c.g >> i) & 1) ? 0xFF : 0x00;
+			pointer[depthBufferOffset + bOffset] = ((c.b >> i) & 1) ? 0xFF : 0x00;
+		}
+	}
+
+	__attribute__((always_inline))
+	inline void setByteInBuffer(uint8_t* pointer, const RGBComponents& c, uint8_t mask)
+	{
+		#pragma GCC unroll 5
+		for (uint_fast8_t i = 0; i < constColorDepth; i++) {
+			const size_t depthBufferOffset = noDepthBufferSize * i;
+
+			if ((c.r >> i) & 1)
+				pointer[depthBufferOffset + rOffset] |= mask;
+			else
+				pointer[depthBufferOffset + rOffset] &= ~mask;
+
+			if ((c.g >> i) & 1)
+				pointer[depthBufferOffset + gOffset] |= mask;
+			else
+				pointer[depthBufferOffset + gOffset] &= ~mask;
+
+			if ((c.b >> i) & 1)
+				pointer[depthBufferOffset + bOffset] |= mask;
+			else
+				pointer[depthBufferOffset + bOffset] &= ~mask;
+		}
+	}
+
+	////////////////////////////////////////
 	// Display driving
 
+public:
 	/// Updates the display by minimal step (single minimal chunk).
 	/// The `showTime` (in CPU cycles) scales with the currently displayed 
 	/// color depth. It's kinda half of actual show time on average in long run.
+	__attribute__((flatten))
 	void displayStep(uint16_t showTime)
 	{
 		setMux(displayRowPattern);

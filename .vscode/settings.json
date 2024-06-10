@@ -1,7 +1,8 @@
 {
 	"cSpell.words": [
 		"Adafruit",
-		"GPOC"
+		"GPOC",
+		"IRAM"
 	],
 	"files.associations": {
 		"*.log": "vt100",
