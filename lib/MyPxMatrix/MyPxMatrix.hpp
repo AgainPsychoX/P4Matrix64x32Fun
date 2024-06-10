@@ -98,19 +98,21 @@ public:
 		if (x_ < 0 || x_ >= constWidth || y_ < 0 || y_ >= constHeight)
 			return;
 
-		// Casting to unsigned and fast types really helps here a tiny bit
-		// Also, allow for flipping in; note X axis is flipped by default.
-		const uint_fast16_t x = flipX ? x_ : constWidth  - 1 - x_;
+		// Casting to unsigned and fast types really helps here a tiny bit.
+		// Also, allow for flipping; note X axis is flipped by default.
+		const uint_fast16_t x = flipX ? x_ : constWidth - 1 - x_;
 		const uint_fast16_t y = flipY ? constHeight - 1 - y_ : y_;
+
 		const uint_fast16_t xByte = x / 8;
-		const uint_fast16_t xBit  = x % 8;
+		const uint_fast8_t xBit = x % 8;
 
 #ifdef DISPLAY_ROW_POINTERS_OPTIMIZATION
-		uint8_t* rowPointer = rowsPointers[y] - xByte;
+		uint8_t* pointer = rowsPointers[y] - xByte;
 		static constexpr auto rOffset = -patternColorBytes * 0;
 		static constexpr auto gOffset = -patternColorBytes * 1;
 		static constexpr auto bOffset = -patternColorBytes * 2;
 #else // ifndef DISPLAY_ROW_POINTERS_OPTIMIZATION
+		uint8_t* pointer = buffer;
 		const int_fast32_t rOffset = 0
 			+ (sendBufferSize - 1) + (y % constRowPattern) * sendBufferSize
 			- panelWidthBytes * (y / constRowPattern) - xByte;
@@ -128,39 +130,152 @@ public:
 		for (uint_fast8_t i = 0; i < constColorDepth; i++) {
 			const size_t depthBufferOffset = noDepthBufferSize * i;
 
-#ifdef DISPLAY_ROW_POINTERS_OPTIMIZATION
 			if ((r >> i) & 1)
-				rowPointer[depthBufferOffset + rOffset] |= 1 << xBit;
+				pointer[depthBufferOffset + rOffset] |= 1 << xBit;
 			else
-				rowPointer[depthBufferOffset + rOffset] &= ~(1 << xBit);
+				pointer[depthBufferOffset + rOffset] &= ~(1 << xBit);
 
 			if ((g >> i) & 1)
-				rowPointer[depthBufferOffset + gOffset] |= 1 << xBit;
+				pointer[depthBufferOffset + gOffset] |= 1 << xBit;
 			else
-				rowPointer[depthBufferOffset + gOffset] &= ~(1 << xBit);
+				pointer[depthBufferOffset + gOffset] &= ~(1 << xBit);
 
 			if ((b >> i) & 1)
-				rowPointer[depthBufferOffset + bOffset] |= 1 << xBit;
+				pointer[depthBufferOffset + bOffset] |= 1 << xBit;
 			else
-				rowPointer[depthBufferOffset + bOffset] &= ~(1 << xBit);
-#else // ifndef DISPLAY_ROW_POINTERS_OPTIMIZATION
-			if ((r >> i) & 1)
-				buffer[depthBufferOffset + rOffset] |= 1 << xBit;
-			else
-				buffer[depthBufferOffset + rOffset] &= ~(1 << xBit);
-
-			if ((g >> i) & 1)
-				buffer[depthBufferOffset + gOffset] |= 1 << xBit;
-			else
-				buffer[depthBufferOffset + gOffset] &= ~(1 << xBit);
-
-			if ((b >> i) & 1)
-				buffer[depthBufferOffset + bOffset] |= 1 << xBit;
-			else
-				buffer[depthBufferOffset + bOffset] &= ~(1 << xBit);
-#endif // ifndef DISPLAY_ROW_POINTERS_OPTIMIZATION
+				pointer[depthBufferOffset + bOffset] &= ~(1 << xBit);
 		}
 	}
+
+	virtual void drawFastHLine(int16_t x1_, int16_t y_, int16_t w, uint16_t color) override
+	{
+		// TODO: limit the line instead skipping
+		if (x1_ < 0 || x1_ >= constWidth || y_ < 0 || y_ >= constHeight || w <= 0)
+			return;
+
+		const auto x2_ = std::min(x1_ + w - 1, constWidth - 1);
+
+		// Casting to unsigned and fast types really helps here a tiny bit.
+		// Also, allow for flipping; note X axis is flipped by default.
+		const uint_fast16_t x1 = flipX ? x1_ : constWidth - 1 - x1_;
+		const uint_fast16_t x2 = flipX ? x2_ : constWidth - 1 - x2_;
+		const uint_fast16_t y = flipY ? constHeight - 1 - y_ : y_;
+
+		const uint_fast16_t x1Byte = x1 / 8;
+		const uint_fast16_t x2Byte = x2 / 8;
+
+#ifdef DISPLAY_ROW_POINTERS_OPTIMIZATION
+		static constexpr auto rOffset = -patternColorBytes * 0;
+		static constexpr auto gOffset = -patternColorBytes * 1;
+		static constexpr auto bOffset = -patternColorBytes * 2;
+#else // ifndef DISPLAY_ROW_POINTERS_OPTIMIZATION
+		static_assert(false); // FIXME: implement me
+#endif
+
+		// Prepare colors (see `drawPixel` source for details)
+		const uint_fast8_t r = color >> 11 >> (5 - constColorDepth);
+		const uint_fast8_t g = color >>  6 >> (5 - constColorDepth);
+		const uint_fast8_t b = color /***/ >> (5 - constColorDepth);
+
+		const auto x1Bit = x1 % 8;
+		const auto x2Bit = x2 % 8;
+		const uint8_t x1Mask = 0xFF >> (7 - x1Bit);
+		const uint8_t x2Mask = 0xFF << x2Bit;
+		// Handle case where the line is single byte
+		if (x1Byte == x2Byte) {
+			uint8_t mask = x1Mask & x2Mask;
+			uint8_t* pointer = rowsPointers[y] - x1Byte;
+
+			#pragma GCC unroll 5
+			for (uint_fast8_t i = 0; i < constColorDepth; i++) {
+				const size_t depthBufferOffset = noDepthBufferSize * i;
+
+				if ((r >> i) & 1)
+					pointer[depthBufferOffset + rOffset] |= mask;
+				else
+					pointer[depthBufferOffset + rOffset] &= ~mask;
+
+				if ((g >> i) & 1)
+					pointer[depthBufferOffset + gOffset] |= mask;
+				else
+					pointer[depthBufferOffset + gOffset] &= ~mask;
+
+				if ((b >> i) & 1)
+					pointer[depthBufferOffset + bOffset] |= mask;
+				else
+					pointer[depthBufferOffset + bOffset] &= ~mask;
+			}
+		}
+		else /* multi-byte */ {
+			// Set pointer to first byte, and calculate last byte pointer.
+			// Note the inverse order, because `x1Byte > x2Byte` always true.
+			uint8_t* pointer = rowsPointers[y] - x1Byte;
+			uint8_t* last = rowsPointers[y] - x2Byte;
+
+			// First byte
+			#pragma GCC unroll 5
+			for (uint_fast8_t i = 0; i < constColorDepth; i++) {
+				const size_t depthBufferOffset = noDepthBufferSize * i;
+
+				if ((r >> i) & 1)
+					pointer[depthBufferOffset + rOffset] |= x1Mask;
+				else
+					pointer[depthBufferOffset + rOffset] &= ~x1Mask;
+
+				if ((g >> i) & 1)
+					pointer[depthBufferOffset + gOffset] |= x1Mask;
+				else
+					pointer[depthBufferOffset + gOffset] &= ~x1Mask;
+
+				if ((b >> i) & 1)
+					pointer[depthBufferOffset + bOffset] |= x1Mask;
+				else
+					pointer[depthBufferOffset + bOffset] &= ~x1Mask;
+			}
+			pointer++;
+
+			// Full bytes (if any)
+			while (pointer < last) {
+				#pragma GCC unroll 5
+				for (uint_fast8_t i = 0; i < constColorDepth; i++) {
+					const size_t depthBufferOffset = noDepthBufferSize * i;
+
+					pointer[depthBufferOffset + rOffset] = ((r >> i) & 1) ? 0xFF : 0x00;
+					pointer[depthBufferOffset + gOffset] = ((g >> i) & 1) ? 0xFF : 0x00;
+					pointer[depthBufferOffset + bOffset] = ((b >> i) & 1) ? 0xFF : 0x00;
+				}
+				pointer++;
+			}
+
+			// Last byte
+			#pragma GCC unroll 5
+			for (uint_fast8_t i = 0; i < constColorDepth; i++) {
+				const size_t depthBufferOffset = noDepthBufferSize * i;
+
+				if ((r >> i) & 1)
+					pointer[depthBufferOffset + rOffset] |= x2Mask;
+				else
+					pointer[depthBufferOffset + rOffset] &= ~x2Mask;
+
+				if ((g >> i) & 1)
+					pointer[depthBufferOffset + gOffset] |= x2Mask;
+				else
+					pointer[depthBufferOffset + gOffset] &= ~x2Mask;
+
+				if ((b >> i) & 1)
+					pointer[depthBufferOffset + bOffset] |= x2Mask;
+				else
+					pointer[depthBufferOffset + bOffset] &= ~x2Mask;
+			}
+		}
+
+		// TODO: remove repeated code, especially the loop, maybe also the color components preparing
+	}
+
+	// virtual void drawFastVLine(int16_t x, int16_t y, int16_t h, uint16_t color) override
+	// {
+	// 	// FIXME: implement me
+	// }
 
 	////////////////////////////////////////
 	// Display driving

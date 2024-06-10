@@ -137,7 +137,7 @@ void draw2DGradient()
 
 void drawThreeStripesAngled()
 {
-	display.fillScreen(0);
+	display.fillScreen(0b0000100001000001);
 	display.drawLine(0, 0, display.width(), display.height(), 0b0000011111100000);
 	display.drawLine(display.width() / 2, 0, display.width(), display.height() / 2, 0b1111100000000000);
 	display.drawLine(0, display.height() / 2, display.width() / 2, display.height(), 0b0000000000011111);
@@ -160,6 +160,17 @@ void drawWhiteGradients()
 	}
 	for (int y = 0; y < 32; y++) {
 		display.drawLine(32, y, display.width(), y, (y << 11) | (y << 6) | y);
+	}
+}
+
+void drawOrthogonalLines()
+{
+	display.fillScreen(0b0000100001000001);
+	for (auto& i : {23, 17, 13, 9, 7, 5, 3, 0}) {
+		const auto w = 2 + i * 2;
+		const auto h = 2 + i * 3 / 2;
+		const uint16_t c = colors::to565(colors::HSL{static_cast<float>(i) * 20, 100, 50});
+		display.drawRect(i * 3 / 2, display.height() - w, w, h, c);
 	}
 }
 
@@ -396,6 +407,7 @@ void loop()
 			case 6: examples::drawSingleColorGradients(6); break;
 			case 7: examples::drawSingleColorGradients(0); break;
 			case 8: examples::drawWhiteGradients(); break;
+			case 9: examples::drawOrthogonalLines(); break;
 		}
 		display.setTextColor(0);
 		display.setCursor(1, 1);
