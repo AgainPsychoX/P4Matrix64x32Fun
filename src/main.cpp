@@ -46,14 +46,33 @@ enum class Mode : uint8_t
 	Everything,
 };
 
+uint8_t example = 1;
 Mode mode = Mode::SingleColorDepth;
 uint8_t interval = 4;
 uint16_t showTime = 100;
 #ifdef DEBUG_DISPLAY_SHOW_TIME
+unsigned long lastTick;
 unsigned long displayTickCounter = 0;
+unsigned long displayLateTickCounter = 0;
 unsigned long displayTickTimeSum = 0;
+#define DEBUG_DISPLAY_TICK_LATE_TICK_PRINT Serial.printf("[lateTick:%lu]", now - lastTick)
+#ifndef DEBUG_DISPLAY_TICK_LATE_TICK_PRINT
+#	define DEBUG_DISPLAY_TICK_LATE_TICK_PRINT 
 #endif
-uint8_t example = 1;
+#	define DEBUG_DISPLAY_TICK_COMMON_CODE_PRE                  \
+				unsigned long now = micros();                  \
+				if (now - lastTick > ::interval * 1024) {      \
+					displayLateTickCounter++;                  \
+					DEBUG_DISPLAY_TICK_LATE_TICK_PRINT;        \
+				}                                              \
+				lastTick = now;
+#	define DEBUG_DISPLAY_TICK_COMMON_CODE_POST                 \
+				displayTickTimeSum += micros() - now;          \
+				displayTickCounter++;
+#else
+#	define DEBUG_DISPLAY_TICK_COMMON_CODE_PRE
+#	define DEBUG_DISPLAY_TICK_COMMON_CODE_POST
+#endif
 
 /// Setups display ticker for specified settings.
 /// The `interval` is in milliseconds, `showTime` is in CPU cycles.
@@ -63,38 +82,23 @@ void setupDisplayTicker(Mode mode, uint8_t interval, uint16_t showTime)
 	switch (mode) {
 		case Mode::Steps:
 			displayTicker.attach_ms(interval, [showTime] {
-#ifdef DEBUG_DISPLAY_SHOW_TIME
-				unsigned long now = micros();
+				DEBUG_DISPLAY_TICK_COMMON_CODE_PRE;
 				display.displayStep(showTime);
-				displayTickTimeSum += micros() - now;
-				displayTickCounter++;
-#else
-				display.displayStep(showTime);
-#endif
+				DEBUG_DISPLAY_TICK_COMMON_CODE_POST
 			});
 			break;
 		case Mode::SingleColorDepth:
 			displayTicker.attach_ms(interval, [showTime] {
-#ifdef DEBUG_DISPLAY_SHOW_TIME
-				unsigned long now = micros();
+				DEBUG_DISPLAY_TICK_COMMON_CODE_PRE;
 				display.displaySingleColorDepth(showTime);
-				displayTickTimeSum += micros() - now;
-				displayTickCounter++;
-#else
-				display.displaySingleColorDepth(showTime);
-#endif
+				DEBUG_DISPLAY_TICK_COMMON_CODE_POST;
 			});
 			break;
 		case Mode::Everything:
 			displayTicker.attach_ms(interval, [showTime] {
-#ifdef DEBUG_DISPLAY_SHOW_TIME
-				unsigned long now = micros();
+				DEBUG_DISPLAY_TICK_COMMON_CODE_PRE;
 				display.displayEverything(showTime);
-				displayTickTimeSum += micros() - now;
-				displayTickCounter++;
-#else
-				display.displayEverything(showTime);
-#endif
+				DEBUG_DISPLAY_TICK_COMMON_CODE_POST;
 			});
 			break;
 		default:
@@ -114,6 +118,7 @@ void drawHorizontalGradient()
 	for (int x = 0; x < display.width(); x++) {
 		float hue = static_cast<float>(x) / display.width();
 		display.drawFastVLine(x, 0, display.height(), to565(HSL{hue, 1, 0.5}));
+		if (x & 0b111) yield();
 	}
 }
 
@@ -315,8 +320,13 @@ void loop()
 						display.resetDebugCounters();
 
 						Serial.printf(
-							"displayTickCounter=%lu\ndisplayTickTimeSum=%lu\n", 
-							displayTickCounter, displayTickTimeSum);
+							"displayLateTickCounter=%lu\n"
+							"displayTickCounter=%lu\n"
+							"displayTickTimeSum=%lu\n",
+							displayLateTickCounter,
+							displayTickCounter, 
+							displayTickTimeSum);
+						displayLateTickCounter = 0;
 						displayTickCounter = 0;
 						displayTickTimeSum = 0;
 #endif
@@ -338,8 +348,12 @@ void loop()
 	}
 
 	unsigned long now = micros();
+	bool justUpdatedThermometer = false;
+
 	// When conversion is complete, update thermometer
 	if (oneWire.read_bit()) {
+		justUpdatedThermometer = true;
+
 		// Read temperature fast (2 first bytes of scratch pad)
 		// This will skip CRC.
 		oneWire.reset();
@@ -385,13 +399,13 @@ void loop()
 		*p = 0;
 
 		now = micros() - now;
-		Serial.print(F("getTempC: ")); Serial.print(now);
+		Serial.print(F("got temperature: ")); Serial.print(now);
 		now = micros();
 
-		optimistic_yield(1024);
+		yield();
 
 		now = micros() - now;
-		Serial.print(F(" after 1st yield: ")); Serial.print(now);
+		Serial.print(F("\tafter 1st yield: ")); Serial.print(now);
 		now = micros();
 
 		// Start conversion
@@ -409,9 +423,8 @@ void loop()
 		yield();
 
 		now = micros() - now;
-		Serial.print(F(" after 2nd yield: ")); Serial.print(now);
+		Serial.print(F("\tafter 2nd yield: ")); Serial.print(now);
 		now = micros();
-		Serial.print('\t');
 	}
 
 	// Update display
@@ -434,12 +447,17 @@ void loop()
 #ifdef DISPLAY_DOUBLE_BUFFER
 	display.swapBuffer();
 #endif
-	// yield();
-	// optimistic_yield(1024);
-	optimistic_yield(interval * 1024);
-	// delay(5);
-	// delay(200);
 
-	now = micros() - now;
-	Serial.print(F("display draw: ")); Serial.println(now);
+	if (justUpdatedThermometer) {
+		now = micros() - now;
+		Serial.print(F("\tdisplay draw: ")); Serial.print(now);
+		now = micros();
+	}
+
+	yield();
+
+	if (justUpdatedThermometer) {
+		now = micros() - now;
+		Serial.print(F("\tafter yield: ")); Serial.println(now);
+	}
 }
