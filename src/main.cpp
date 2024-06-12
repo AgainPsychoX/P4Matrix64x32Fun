@@ -111,26 +111,26 @@ using namespace colors;
 void drawHorizontalGradient()
 {
 	for (int x = 0; x < display.width(); x++) {
-		float hue = static_cast<float>(x * 360) / display.width();
-		display.drawFastVLine(x, 0, display.height(), to565(HSL{hue, 100, 50}));
+		float hue = static_cast<float>(x) / display.width();
+		display.drawFastVLine(x, 0, display.height(), to565(HSL{hue, 1, 0.5}));
 	}
 }
 
 void drawVerticalGradient()
 {
 	for (int y = 0; y < display.height(); y++) {
-		float hue = static_cast<float>(y * 360) / display.height();
-		display.drawFastHLine(0, y, display.width(), to565(HSL{hue, 100, 50}));
+		float hue = static_cast<float>(y) / display.height();
+		display.drawFastHLine(0, y, display.width(), to565(HSL{hue, 1, 0.5}));
 	}
 }
 
 void draw2DGradient()
 {
-	for (int x = 0; x < display.width(); x++) {
-		float hue = static_cast<float>(x * 360) / display.width();
-		for (int y = 0; y < display.height(); y++) {
-			float saturation = static_cast<float>(y * 100) / display.height();
-			display.drawPixel(x, y, to565(HSL{hue, saturation, 50}));
+	for (unsigned int x = 0; x < 64; x++) {
+		float hue = static_cast<float>(x) / 64;
+		for (unsigned int y = 0; y < 32; y++) {
+			float saturation = static_cast<float>(y) / 32;
+			display.drawPixel(x, y, to565(HSL{hue, saturation, 0.5}));
 		}
 	}
 }
@@ -169,7 +169,7 @@ void drawOrthogonalLines()
 	for (auto& i : {23, 17, 13, 9, 7, 5, 3, 0}) {
 		const auto w = 2 + i * 2;
 		const auto h = 2 + i * 3 / 2;
-		const uint16_t c = colors::to565(colors::HSL{static_cast<float>(i) * 20, 100, 50});
+		const uint16_t c = colors::to565(colors::HSL{static_cast<float>(i) / 20, 1, 0.5});
 		display.drawRect(i * 3 / 2, display.height() - w, w, h, c);
 	}
 }
@@ -180,7 +180,7 @@ void drawFilledRectangles()
 	for (auto& i : {23, 17, 13, 9, 7, 5, 3, 0}) {
 		const auto w = 2 + i * 2;
 		const auto h = 2 + i * 3 / 2;
-		const uint16_t c = colors::to565(colors::HSL{static_cast<float>(i) * 20, 100, 50});
+		const uint16_t c = colors::to565(colors::HSL{static_cast<float>(i) / 20, 1, 0.5});
 		display.fillRect(i * 3 / 2, display.height() - w, w, h, c);
 	}
 }

@@ -4,15 +4,28 @@
 
 namespace colors {
 
-struct RGB {
-	uint8_t r, g, b;
+struct RGB
+{
+	/// Red component, from 0 to 255.
+	uint8_t r;
+	/// Green component, from 0 to 255.
+	uint8_t g;
+	/// Blue component, from 0 to 255.
+	uint8_t b;
 };
 
-struct HSL {
-	float h, s, l;
+struct HSL
+{
+	/// Hue, from 0 to 1 (not 360).
+	float h;
+	/// Saturation, from 0 to 1 (not 100).
+	float s;
+	/// Lightness, from 0 to 1 (not 100).
+	float l;
 };
 
-constexpr HSL toHSL(float r, float g, float b) {
+constexpr HSL toHSL(float r, float g, float b)
+{
 	float maxColor = std::max({r, g, b});
 	float minColor = std::min({r, g, b});
 	float h, s, l;
@@ -34,13 +47,13 @@ constexpr HSL toHSL(float r, float g, float b) {
 		else {
 			h = (r - g) / d + 4;
 		}
-		h *= 60;
 	}
 
-	return {h, s * 100, l * 100};
+	return {h / 6, s, l};
 }
 
-constexpr HSL toHSL(RGB rgb) {
+constexpr HSL toHSL(RGB rgb)
+{
 	return toHSL(
 		float(rgb.r) / 255, 
 		float(rgb.g) / 255, 
@@ -48,8 +61,9 @@ constexpr HSL toHSL(RGB rgb) {
 	);
 }
 
-// TODO: test if this is more optimal than toHSL(toRGH(x))
-constexpr HSL toHSL(uint16_t rgb565) {
+// TODO: test if this is more optimal than toHSL(toRGB(x))
+constexpr HSL toHSL(uint16_t rgb565)
+{
 	return toHSL(
 		float(rgb565) / 0b1111100000000000,
 		float(rgb565) / 0b0000011111100000,
@@ -58,20 +72,24 @@ constexpr HSL toHSL(uint16_t rgb565) {
 }
 
 namespace {
-	constexpr float hue2RGB(float p, float q, float t) {
-		if (t < 0.0) t += 1.0;
-		if (t > 1.0) t -= 1.0;
-		if (t < 1.0 / 6.0) return p + (q - p) * 6.0 * t;
-		if (t < 1.0 / 2.0) return q;
-		if (t < 2.0 / 3.0) return p + (q - p) * (2.0 / 3.0 - t) * 6.0;
-		return p;
-	}
+
+constexpr float hue2RGB(float p, float q, float t)
+{
+	if (t < 0.0) t += 1.0;
+	if (t > 1.0) t -= 1.0;
+	if (t < 1.0 / 6.0) return p + (q - p) * 6.0 * t;
+	if (t < 1.0 / 2.0) return q;
+	if (t < 2.0 / 3.0) return p + (q - p) * (2.0 / 3.0 - t) * 6.0;
+	return p;
 }
 
-constexpr RGB toRGB(HSL hsl) {
-	float h_ = hsl.h / 360;
-	float s_ = hsl.s / 100;
-	float l_ = hsl.l / 100;
+}
+
+constexpr RGB toRGB(HSL hsl)
+{
+	float h_ = hsl.h;
+	float s_ = hsl.s;
+	float l_ = hsl.l;
 
 	float q = l_ < 0.5 ? l_ * (1.0 + s_) : l_ + s_ - l_ * s_;
 	float p = 2.0 * l_ - q;
@@ -87,7 +105,8 @@ constexpr RGB toRGB(HSL hsl) {
 	};
 }
 
-constexpr inline RGB toRGB(uint16_t rgb565) {
+constexpr inline RGB toRGB(uint16_t rgb565)
+{
 	return {
 		static_cast<uint8_t>((rgb565 & 0b1111100000000000) >> 8), // r
 		static_cast<uint8_t>((rgb565 & 0b0000011111100000) >> 3), // g
@@ -95,15 +114,18 @@ constexpr inline RGB toRGB(uint16_t rgb565) {
 	};
 }
 
-constexpr inline uint16_t to565(RGB rgb) {
+constexpr inline uint16_t to565(RGB rgb)
+{
 	return ((rgb.r & 0b11111000) << 8) | ((rgb.g & 0b11111100) << 3) | (rgb.b >> 3);
 }
 
-constexpr inline uint16_t to565(HSL hsl) {
+constexpr inline uint16_t to565(HSL hsl)
+{
 	return to565(toRGB(hsl));
 }
 
-constexpr RGB interpolateRGB(const RGB& a, const RGB& b, float ratio) {
+constexpr RGB interpolateRGB(const RGB& a, const RGB& b, float ratio)
+{
 	return {
 		static_cast<uint8_t>(a.r + (b.r - a.r) * ratio),
 		static_cast<uint8_t>(a.g + (b.g - a.g) * ratio),
@@ -111,7 +133,8 @@ constexpr RGB interpolateRGB(const RGB& a, const RGB& b, float ratio) {
 	};
 }
 
-constexpr HSL interpolateHSL(const HSL& a, const HSL& b, float ratio) {
+constexpr HSL interpolateHSL(const HSL& a, const HSL& b, float ratio)
+{
 	return {
 		a.h + (b.h - a.h) * ratio,
 		a.s + (b.s - a.s) * ratio,
