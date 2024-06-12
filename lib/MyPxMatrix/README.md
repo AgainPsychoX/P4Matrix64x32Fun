@@ -58,12 +58,13 @@ HUB75:
 
 + Try `((r >> i) & 1)` instead `(r & (1 << i))`
 + Double buffer
+	+ Mode 0. Disabled; only single buffer.
 	+ Mode 1. Buffering encoded ready to display to the screen.
 	+ Mode 2. Buffering as original (RGB565 / `uint16_t`) then bulk encoding.
 	+ Mode 3. Like mode 2., but use dirty flags to allow partial encoding.
 + Possible more optimizations? See https://github.com/2dom/PxMatrix/pull/24/commits/bf9898040d1f3f7aecc212b3178603b773aacfd6
 	+ Somehow, `fillRect` is only slightly slower to `drawRect` (not filled), despite huge number of pixels drawn difference. Investigate why.
-	+ Some other specialized functions?
+	+ Some other specialized functions? Most likely none.
 + For debug in `displayStep`: count cycles instead microseconds (can use `ESP.getCycleCount()` under ESP8266) & try balance the `if`s
 + Allow color depth to be run-time configurable (doesn't seem to be critical for performance
 + Test (and adapt) the display library to lower C++ standard.

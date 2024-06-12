@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Adafruit_GFX.h>
 #include <SPI.h>
 
@@ -34,11 +36,25 @@ class MyPxMatrix : public Adafruit_GFX
 	////////////////////////////////////////
 	// Fields
 
+#ifdef DISPLAY_DOUBLE_BUFFER
+	alignas(uint32_t)
+	uint8_t firstBuffer[noDepthBufferSize * constColorDepth];
+
+	alignas(uint32_t)
+	uint8_t secondBuffer[noDepthBufferSize * constColorDepth];
+#else
+	/// Buffer for the display data. Stores pixels in specific format:
+	/// split between few buffers to simulate color depth, then split to send 
+	/// buffers for individual row patterns (which can span multiple rows 
+	/// on the real display), which finally split into 3 colors buffers,
+	/// representing LEDs state as binary: on or off.
 	alignas(uint32_t)
 	uint8_t buffer[noDepthBufferSize * constColorDepth];
+#endif
+
 #ifdef DISPLAY_ROW_POINTERS_OPTIMIZATION
 	uint8_t* rowsPointers[constHeight];
-#endif // DISPLAY_ROW_POINTERS_OPTIMIZATION
+#endif
 
 	__attribute__((always_inline))
 	inline uint8_t* getRowPointer(uint8_t y)
@@ -52,7 +68,14 @@ class MyPxMatrix : public Adafruit_GFX
 #endif
 	}
 
-public:
+#ifdef DISPLAY_DOUBLE_BUFFER
+	/// Pointer to buffer to be drawn onto. Used for double buffering.
+	/// If the first buffer is pointed to, the second one is being displayed;
+	/// and vice versa.
+	uint8_t* buffer;
+#endif
+
+public:	
 	bool flipX = false;
 	bool flipY = false;
 
@@ -73,6 +96,9 @@ public:
 	inline MyPxMatrix() 
 		: Adafruit_GFX(constWidth, constHeight) 
 	{
+#ifdef DISPLAY_DOUBLE_BUFFER
+		buffer = firstBuffer;
+#endif
 		displayNextBufferPosition = buffer;
 #ifdef DISPLAY_ROW_POINTERS_OPTIMIZATION
 		for (size_t y = 0; y < constHeight; y++) {
@@ -346,6 +372,34 @@ private:
 	// Display driving
 
 public:
+#ifdef DISPLAY_DOUBLE_BUFFER
+	/// Swaps the display buffers.
+	inline void swapBuffer()
+	{
+		// Assuming `buffer` is always `firstBuffer` or `secondBuffer`,
+		// and `secondBuffer` is always after `firstBuffer`.
+#ifdef DISPLAY_ROW_POINTERS_OPTIMIZATION
+		const auto offset = secondBuffer - firstBuffer;
+#endif
+		if (buffer == firstBuffer) {
+			buffer = secondBuffer;
+#ifdef DISPLAY_ROW_POINTERS_OPTIMIZATION
+			for (size_t y = 0; y < constHeight; y++) {
+				rowsPointers[y] += offset;
+			}
+#endif
+		}
+		else {
+			buffer = firstBuffer;
+#ifdef DISPLAY_ROW_POINTERS_OPTIMIZATION
+			for (size_t y = 0; y < constHeight; y++) {
+				rowsPointers[y] -= offset;
+			}
+#endif
+		}
+	}
+#endif
+
 	/// Updates the display by minimal step (single minimal chunk).
 	/// The `showTime` (in CPU cycles) scales with the currently displayed 
 	/// color depth. It's kinda half of actual show time on average in long run.
@@ -385,7 +439,11 @@ public:
 		}
 
 		if (displayRowPattern == constRowPattern - 1 && displayColorDepth == constColorDepth - 1) {
+#ifdef DISPLAY_DOUBLE_BUFFER
+			displayNextBufferPosition = (buffer == firstBuffer) ? secondBuffer : firstBuffer;
+#else
 			displayNextBufferPosition = buffer;
+#endif
 		}
 		else {
 			displayNextBufferPosition += sendBufferSize;

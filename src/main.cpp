@@ -425,6 +425,9 @@ void loop()
 		display.setTextColor(0);
 		display.setCursor(1, 1);
 		display.print(buffer);
+#ifdef DISPLAY_DOUBLE_BUFFER
+		display.swapBuffer();
+#endif
 
 		now = micros() - now;
 		Serial.print(F("\tdisplay draw: ")); Serial.println(now);
