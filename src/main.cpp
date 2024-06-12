@@ -132,6 +132,7 @@ void draw2DGradient()
 			float saturation = static_cast<float>(y) / 32;
 			display.drawPixel(x, y, to565(HSL{hue, saturation, 0.5}));
 		}
+		yield();
 	}
 }
 
