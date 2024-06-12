@@ -36,6 +36,7 @@ constexpr bool singleOneWireDevice = true;
 
 OneWireDeviceAddress thermometerAddress; // the single DS18B20
 constexpr uint8_t thermometerResolution = 12;
+char temperatureString[8];
 
 enum class Mode : uint8_t
 {
@@ -126,8 +127,9 @@ void drawVerticalGradient()
 
 void draw2DGradient()
 {
+	unsigned int t = micros() >> 10 & 0xFFF;
 	for (unsigned int x = 0; x < 64; x++) {
-		float hue = static_cast<float>(x) / 64;
+		float hue = static_cast<float>(((x << 6) + t) & 0xFFF) / 4096;
 		for (unsigned int y = 0; y < 32; y++) {
 			float saturation = static_cast<float>(y) / 32;
 			display.drawPixel(x, y, to565(HSL{hue, saturation, 0.5}));
@@ -268,6 +270,9 @@ void setup()
 		else {
 			Serial.println(F("[Temperature] DS18B20 missing"));
 		}
+
+		// Initialize temperature string as empty
+		temperatureString[0] = 0;
 	}
 }
 
@@ -370,8 +375,7 @@ void loop()
 		};
 		char digitAfterComma = digitAfterCommaLookup[raw & 0b1111];
 		raw = raw >> 4;
-		char buffer[8];
-		char* p = buffer;
+		char* p = temperatureString;
 		if (raw >= 10) *p++ = '0' + (raw / 10);
 		*p++ = '0' + (raw % 10);
 		*p++ = '.';
@@ -407,29 +411,35 @@ void loop()
 		now = micros() - now;
 		Serial.print(F(" after 2nd yield: ")); Serial.print(now);
 		now = micros();
-
-		// Update display
-		switch (example) {
-			case 0: display.fillScreen(0); break;
-			case 1: examples::drawHorizontalGradient(); break;
-			case 2: examples::drawVerticalGradient(); break;
-			case 3: examples::draw2DGradient(); break;
-			case 4: examples::drawThreeStripesAngled(); break;
-			case 5: examples::drawSingleColorGradients(11); break;
-			case 6: examples::drawSingleColorGradients(6); break;
-			case 7: examples::drawSingleColorGradients(0); break;
-			case 8: examples::drawWhiteGradients(); break;
-			case 9: examples::drawOrthogonalLines(); break;
-			case 10: examples::drawFilledRectangles(); break;
-		}
-		display.setTextColor(0);
-		display.setCursor(1, 1);
-		display.print(buffer);
-#ifdef DISPLAY_DOUBLE_BUFFER
-		display.swapBuffer();
-#endif
-
-		now = micros() - now;
-		Serial.print(F("\tdisplay draw: ")); Serial.println(now);
+		Serial.print('\t');
 	}
+
+	// Update display
+	switch (example) {
+		case 0: display.fillScreen(0); break;
+		case 1: examples::drawHorizontalGradient(); break;
+		case 2: examples::drawVerticalGradient(); break;
+		case 3: examples::draw2DGradient(); break;
+		case 4: examples::drawThreeStripesAngled(); break;
+		case 5: examples::drawSingleColorGradients(11); break;
+		case 6: examples::drawSingleColorGradients(6); break;
+		case 7: examples::drawSingleColorGradients(0); break;
+		case 8: examples::drawWhiteGradients(); break;
+		case 9: examples::drawOrthogonalLines(); break;
+		case 10: examples::drawFilledRectangles(); break;
+	}
+	display.setTextColor(0);
+	display.setCursor(1, 1);
+	display.print(temperatureString);
+#ifdef DISPLAY_DOUBLE_BUFFER
+	display.swapBuffer();
+#endif
+	// yield();
+	// optimistic_yield(1024);
+	optimistic_yield(interval * 1024);
+	// delay(5);
+	// delay(200);
+
+	now = micros() - now;
+	Serial.print(F("display draw: ")); Serial.println(now);
 }

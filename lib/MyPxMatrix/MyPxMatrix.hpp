@@ -98,8 +98,10 @@ public:
 	{
 #ifdef DISPLAY_DOUBLE_BUFFER
 		buffer = firstBuffer;
-#endif
+		displayNextBufferPosition = secondBuffer;
+#else
 		displayNextBufferPosition = buffer;
+#endif
 #ifdef DISPLAY_ROW_POINTERS_OPTIMIZATION
 		for (size_t y = 0; y < constHeight; y++) {
 			rowsPointers[y] = buffer
@@ -373,16 +375,15 @@ private:
 
 public:
 #ifdef DISPLAY_DOUBLE_BUFFER
-	/// Swaps the display buffers.
+	/// Swaps the display buffers, remap next buffer position to the other one.
 	inline void swapBuffer()
 	{
 		// Assuming `buffer` is always `firstBuffer` or `secondBuffer`,
 		// and `secondBuffer` is always after `firstBuffer`.
-#ifdef DISPLAY_ROW_POINTERS_OPTIMIZATION
 		const auto offset = secondBuffer - firstBuffer;
-#endif
 		if (buffer == firstBuffer) {
 			buffer = secondBuffer;
+			displayNextBufferPosition -= offset;
 #ifdef DISPLAY_ROW_POINTERS_OPTIMIZATION
 			for (size_t y = 0; y < constHeight; y++) {
 				rowsPointers[y] += offset;
@@ -391,6 +392,7 @@ public:
 		}
 		else {
 			buffer = firstBuffer;
+			displayNextBufferPosition += offset;
 #ifdef DISPLAY_ROW_POINTERS_OPTIMIZATION
 			for (size_t y = 0; y < constHeight; y++) {
 				rowsPointers[y] -= offset;
