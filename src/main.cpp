@@ -49,19 +49,29 @@ enum class Mode : uint8_t
 uint8_t example = 1;
 Mode mode = Mode::SingleColorDepth;
 uint8_t interval = 4;
+unsigned long intervalMicroseconds = interval * 1000;
 uint16_t showTime = 100;
 #ifdef DEBUG_DISPLAY_SHOW_TIME
 unsigned long lastTick;
-unsigned long displayTickCounter = 0;
 unsigned long displayLateTickCounter = 0;
+unsigned long displayLateTickCutoff = interval * 1024;
+unsigned long displayTickCounter = 0;
 unsigned long displayTickTimeSum = 0;
-#define DEBUG_DISPLAY_TICK_LATE_TICK_PRINT Serial.printf("[lateTick:%lu]", now - lastTick)
+#define DEBUG_DISPLAY_TICK_TICK_PRINT Serial.printf("t[%lu]", now - lastTick);
+#ifndef DEBUG_DISPLAY_TICK_TICK_PRINT
+#define DEBUG_DISPLAY_TICK_TICK_PRINT 
+#endif
+#define DEBUG_DISPLAY_TICK_LATE_TICK_PRINT Serial.printf("LATE");
 #ifndef DEBUG_DISPLAY_TICK_LATE_TICK_PRINT
-#	define DEBUG_DISPLAY_TICK_LATE_TICK_PRINT 
+#define DEBUG_DISPLAY_TICK_LATE_TICK_PRINT 
 #endif
 #	define DEBUG_DISPLAY_TICK_COMMON_CODE_PRE                  \
 				unsigned long now = micros();                  \
-				if (now - lastTick > ::interval * 1024) {      \
+				unsigned long diff = now - lastTick;           \
+				DEBUG_DISPLAY_TICK_TICK_PRINT;                 \
+				if (diff < intervalMicroseconds)               \
+					return;                                    \
+				if (diff > displayLateTickCutoff) {            \
 					displayLateTickCounter++;                  \
 					DEBUG_DISPLAY_TICK_LATE_TICK_PRINT;        \
 				}                                              \
@@ -73,6 +83,36 @@ unsigned long displayTickTimeSum = 0;
 #	define DEBUG_DISPLAY_TICK_COMMON_CODE_PRE
 #	define DEBUG_DISPLAY_TICK_COMMON_CODE_POST
 #endif
+
+extern "C" {
+#include "cont.h"
+}
+extern cont_t* g_pcont;
+extern "C" void esp_schedule();
+extern "C" void esp_yield();
+
+void pessimisticYieldForDisplayTick(unsigned int maxTime)
+{
+	// const unsigned long timeSinceLastTick = micros() - lastTick;
+	// if (intervalMicroseconds < timeSinceLastTick) {
+	// 	// Late tick
+	// 	Serial.print('Y');
+	// 	yield();
+	// 	return;
+	// }
+	while (true) {
+		const unsigned long timeSinceLastTick = micros() - lastTick;
+		const unsigned long timeUntilNextTick = intervalMicroseconds - timeSinceLastTick;
+		// FIXME: if maxTime is higher than tick interval, there can be infinite loop
+		if (maxTime < timeUntilNextTick)
+			break;
+		Serial.printf("y@%lu;", timeSinceLastTick);
+		// yield();
+		esp_schedule(); // without it the original loop task doesn't continue after yield
+		// esp_yield(); // == `if (can_yield()) esp_yield_within_cont();`
+		cont_yield(g_pcont);
+	}
+}
 
 /// Setups display ticker for specified settings.
 /// The `interval` is in milliseconds, `showTime` is in CPU cycles.
@@ -116,17 +156,20 @@ using namespace colors;
 void drawHorizontalGradient()
 {
 	for (int x = 0; x < display.width(); x++) {
+		unsigned long now = micros();
 		float hue = static_cast<float>(x) / display.width();
 		display.drawFastVLine(x, 0, display.height(), to565(HSL{hue, 1, 0.5}));
-		if (x & 0b111) yield();
+		pessimisticYieldForDisplayTick(micros() - now + 100);
 	}
 }
 
 void drawVerticalGradient()
 {
 	for (int y = 0; y < display.height(); y++) {
+		unsigned long now = micros();
 		float hue = static_cast<float>(y) / display.height();
 		display.drawFastHLine(0, y, display.width(), to565(HSL{hue, 1, 0.5}));
+		pessimisticYieldForDisplayTick(micros() - now + 100);
 	}
 }
 
@@ -134,18 +177,20 @@ void draw2DGradient()
 {
 	unsigned int t = micros() >> 10 & 0xFFF;
 	for (unsigned int x = 0; x < 64; x++) {
+		unsigned long now = micros();
 		float hue = static_cast<float>(((x << 6) + t) & 0xFFF) / 4096;
 		for (unsigned int y = 0; y < 32; y++) {
 			float saturation = static_cast<float>(y) / 32;
 			display.drawPixel(x, y, to565(HSL{hue, saturation, 0.5}));
 		}
-		yield();
+		pessimisticYieldForDisplayTick(micros() - now + 100);
 	}
 }
 
 void drawThreeStripesAngled()
 {
 	display.fillScreen(0b0000100001000001);
+	yield();
 	display.drawLine(0, 0, display.width(), display.height(), 0b0000011111100000);
 	display.drawLine(display.width() / 2, 0, display.width(), display.height() / 2, 0b1111100000000000);
 	display.drawLine(0, display.height() / 2, display.width() / 2, display.height(), 0b0000000000011111);
@@ -155,9 +200,11 @@ void drawSingleColorGradients(uint8_t shift)
 {
 	for (int x = 0; x < 32; x++) {
 		display.drawLine(x, 0, x, display.height(), x << shift);
+		if (x & 0b111) yield();
 	}
 	for (int y = 0; y < 32; y++) {
 		display.drawLine(32, y, display.width(), y, y << shift);
+		if (y & 0b111) yield();
 	}
 }
 
@@ -165,9 +212,11 @@ void drawWhiteGradients()
 {
 	for (int x = 0; x < 32; x++) {
 		display.drawLine(x, 0, x, display.height(), (x << 11) | (x << 6) | x);
+		if (x & 0b111) yield();
 	}
 	for (int y = 0; y < 32; y++) {
 		display.drawLine(32, y, display.width(), y, (y << 11) | (y << 6) | y);
+		if (y & 0b111) yield();
 	}
 }
 
@@ -190,6 +239,7 @@ void drawFilledRectangles()
 		const auto h = 2 + i * 3 / 2;
 		const uint16_t c = colors::to565(colors::HSL{static_cast<float>(i) / 20, 1, 0.5});
 		display.fillRect(i * 3 / 2, display.height() - w, w, h, c);
+		if (i > 5) yield();
 	}
 }
 
@@ -296,6 +346,10 @@ void loop()
 				if (*p) {
 					if (line[0] == 'i') {
 						interval = strtoul(p + 1, nullptr, 10);
+						intervalMicroseconds = interval * 1000;
+#ifdef DEBUG_DISPLAY_SHOW_TIME
+						displayLateTickCutoff = interval * 1024;
+#endif
 						setupDisplayTicker(mode, interval, showTime);
 					}
 					else if (line[0] == 't') {
@@ -309,6 +363,11 @@ void loop()
 					else if (line[0] == 'e') {
 						example = strtoul(p + 1, nullptr, 10);
 					}
+#ifdef DEBUG_DISPLAY_SHOW_TIME
+					else if (line[0] == 'l') {
+						displayLateTickCutoff = strtoul(p + 1, nullptr, 10);
+					}
+#endif
 					else {
 						Serial.println(F("Unknown assignment"));
 					}
@@ -441,6 +500,15 @@ void loop()
 		case 9: examples::drawOrthogonalLines(); break;
 		case 10: examples::drawFilledRectangles(); break;
 	}
+
+	if (justUpdatedThermometer) {
+		now = micros() - now;
+		Serial.print(F("\tbackground draw: ")); Serial.print(now);
+		now = micros();
+	}
+
+	pessimisticYieldForDisplayTick(400);
+
 	display.setTextColor(0);
 	display.setCursor(1, 1);
 	display.print(temperatureString);
@@ -450,14 +518,17 @@ void loop()
 
 	if (justUpdatedThermometer) {
 		now = micros() - now;
-		Serial.print(F("\tdisplay draw: ")); Serial.print(now);
+		Serial.print(F("\ttext draw: ")); Serial.print(now);
 		now = micros();
 	}
 
-	yield();
+	// pessimisticYieldForDisplayTick(500);
+	// yield();
 
 	if (justUpdatedThermometer) {
 		now = micros() - now;
 		Serial.print(F("\tafter yield: ")); Serial.println(now);
 	}
+
+	Serial.println('d');
 }

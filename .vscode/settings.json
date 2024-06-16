@@ -7,6 +7,12 @@
 	"files.associations": {
 		"*.log": "vt100",
 		"*.mod": "plaintext",
-		"bitset": "cpp"
+		"bitset": "cpp",
+		"*.tcc": "cpp",
+		"memory_resource": "cpp",
+		"iosfwd": "cpp",
+		"new": "cpp",
+		"ostream": "cpp",
+		"streambuf": "cpp"
 	}
 }
