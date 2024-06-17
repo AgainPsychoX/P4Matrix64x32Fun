@@ -15,6 +15,9 @@
 	+ `optimistic_yield()` is like `yield()` but only conditionally, if specified time passed from last yield. It exist to try avoid context switching penalty I think.
 	+ `run_scheduled_functions();` - called on loop end; full explanation comments in `Schedule.h` in sources of Arduino core for ESP8266; feels a bit useless.
 	+ `run_scheduled_recurrent_functions()` - like above, but also on `yield`; from the comments: used to "independently execute user code in CONT stack on a regular basis".
+	+ `Ticker`/`os_timer_setfn`+`os_timer_arm` is handled by SYS stack, so requires the `esp_yield()`;
+	+ `schedule_recurrent_function_us` with manual `run_scheduled_recurrent_functions` instead full `yield`s feels smoother in some applications. Note: it still does normal `yield`s every 100 milliseconds.
+	+ Both methods (from my experience: sometimes, if it lags for some reason), ticks can occur right after each other to "cover up" for the missed timing.
 	+ Further read:
 		+ Source code of Arduino core for ESP8266: `core_esp8266_main.cpp`, `ets_sys.h`, `cont.h`, `cont.S`, `cont_util.cpp`, `Schedule.cpp`, `Schedule.h`, ...
 		+ Articles at https://sub.nanona.fi/esp8266/ 

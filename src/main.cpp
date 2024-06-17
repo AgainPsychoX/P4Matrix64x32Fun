@@ -1,7 +1,8 @@
 #include <OneWire.h>
 #include <MyPxMatrix.hpp>
-#include <Ticker.h>
+#include <Schedule.h>
 #include <colors.hpp>
+#include <utils.hpp> // saturatedSubtract
 
 MyPxMatrix<
 	16,         // PIN_LATCH
@@ -17,8 +18,6 @@ MyPxMatrix<
 	5,          // colorDepth
 	20000000    // spiFrequency
 > display;
-
-Ticker displayTicker;
 
 OneWire oneWire;
 union OneWireDeviceAddress 
@@ -48,103 +47,82 @@ enum class Mode : uint8_t
 
 uint8_t example = 1;
 Mode mode = Mode::SingleColorDepth;
-uint8_t interval = 4;
-unsigned long intervalMicroseconds = interval * 1000;
-uint16_t showTime = 100;
-#ifdef DEBUG_DISPLAY_SHOW_TIME
+uint16_t interval = 4000; // us
+uint16_t showTime = 100; // us
 unsigned long lastTick;
+#ifdef DEBUG_DISPLAY_SHOW_TIME
+unsigned long displayEarlyTickCounter = 0;
+unsigned long displayEarlyTickCutoff = interval - 200;
 unsigned long displayLateTickCounter = 0;
-unsigned long displayLateTickCutoff = interval * 1024;
+unsigned long displayLateTickCutoff = interval + 200;
 unsigned long displayTickCounter = 0;
 unsigned long displayTickTimeSum = 0;
-#define DEBUG_DISPLAY_TICK_TICK_PRINT Serial.printf("t[%lu]", now - lastTick);
-#ifndef DEBUG_DISPLAY_TICK_TICK_PRINT
-#define DEBUG_DISPLAY_TICK_TICK_PRINT 
-#endif
-#define DEBUG_DISPLAY_TICK_LATE_TICK_PRINT Serial.printf("LATE");
-#ifndef DEBUG_DISPLAY_TICK_LATE_TICK_PRINT
-#define DEBUG_DISPLAY_TICK_LATE_TICK_PRINT 
-#endif
-#	define DEBUG_DISPLAY_TICK_COMMON_CODE_PRE                  \
-				unsigned long now = micros();                  \
-				unsigned long diff = now - lastTick;           \
-				DEBUG_DISPLAY_TICK_TICK_PRINT;                 \
-				if (diff < intervalMicroseconds)               \
-					return;                                    \
-				if (diff > displayLateTickCutoff) {            \
-					displayLateTickCounter++;                  \
-					DEBUG_DISPLAY_TICK_LATE_TICK_PRINT;        \
-				}                                              \
-				lastTick = now;
-#	define DEBUG_DISPLAY_TICK_COMMON_CODE_POST                 \
-				displayTickTimeSum += micros() - now;          \
-				displayTickCounter++;
-#else
-#	define DEBUG_DISPLAY_TICK_COMMON_CODE_PRE
-#	define DEBUG_DISPLAY_TICK_COMMON_CODE_POST
 #endif
 
-extern "C" {
-#include "cont.h"
-}
-extern cont_t* g_pcont;
-extern "C" void esp_schedule();
-extern "C" void esp_yield();
-
-void pessimisticYieldForDisplayTick(unsigned int maxTime)
+void displayTick()
 {
-	// const unsigned long timeSinceLastTick = micros() - lastTick;
-	// if (intervalMicroseconds < timeSinceLastTick) {
-	// 	// Late tick
-	// 	Serial.print('Y');
-	// 	yield();
-	// 	return;
-	// }
-	while (true) {
-		const unsigned long timeSinceLastTick = micros() - lastTick;
-		const unsigned long timeUntilNextTick = intervalMicroseconds - timeSinceLastTick;
-		// FIXME: if maxTime is higher than tick interval, there can be infinite loop
-		if (maxTime < timeUntilNextTick)
-			break;
-		Serial.printf("y@%lu;", timeSinceLastTick);
-		// yield();
-		esp_schedule(); // without it the original loop task doesn't continue after yield
-		// esp_yield(); // == `if (can_yield()) esp_yield_within_cont();`
-		cont_yield(g_pcont);
+#ifdef DEBUG_DISPLAY_SHOW_TIME
+	unsigned long now = micros();
+	unsigned long diff = now - lastTick;
+	Serial.printf("t[%lu]", now - lastTick);
+	if (diff < displayEarlyTickCutoff) {
+		displayEarlyTickCounter++;
+		Serial.printf("EARLY");
 	}
-}
-
-/// Setups display ticker for specified settings.
-/// The `interval` is in milliseconds, `showTime` is in CPU cycles.
-void setupDisplayTicker(Mode mode, uint8_t interval, uint16_t showTime)
-{
-	displayTicker.detach();
+	if (diff > displayLateTickCutoff) {
+		displayLateTickCounter++;
+		Serial.printf("LATE");
+	}
+#endif
+	lastTick = now;
 	switch (mode) {
 		case Mode::Steps:
-			displayTicker.attach_ms(interval, [showTime] {
-				DEBUG_DISPLAY_TICK_COMMON_CODE_PRE;
-				display.displayStep(showTime);
-				DEBUG_DISPLAY_TICK_COMMON_CODE_POST
-			});
+			display.displayStep(showTime);
 			break;
 		case Mode::SingleColorDepth:
-			displayTicker.attach_ms(interval, [showTime] {
-				DEBUG_DISPLAY_TICK_COMMON_CODE_PRE;
-				display.displaySingleColorDepth(showTime);
-				DEBUG_DISPLAY_TICK_COMMON_CODE_POST;
-			});
+			display.displaySingleColorDepth(showTime);
 			break;
 		case Mode::Everything:
-			displayTicker.attach_ms(interval, [showTime] {
-				DEBUG_DISPLAY_TICK_COMMON_CODE_PRE;
-				display.displayEverything(showTime);
-				DEBUG_DISPLAY_TICK_COMMON_CODE_POST;
-			});
+			display.displayEverything(showTime);
 			break;
 		default:
 			// No ticking, no display
 			break;
 	}
+#ifdef DEBUG_DISPLAY_SHOW_TIME
+	displayTickTimeSum += micros() - now;
+	displayTickCounter++;
+#endif
+}
+
+void pessimisticYieldForDisplayTick(unsigned long maxTimeToWait)
+{
+	while (true) {
+		const unsigned long timeSinceLastTick = micros() - lastTick;
+		const auto timeUntilNextTick = saturatedSubtract<unsigned long>(interval, timeSinceLastTick);
+		// FIXME: if maxTimeToWait is higher than tick interval, there can be infinite loop
+		// Serial.printf("<%lu>", timeSinceLastTick);
+		if (maxTimeToWait < timeUntilNextTick)
+			break;
+		// Serial.print('y');
+		Serial.printf("<%lu>y",timeSinceLastTick);
+		// displayTick();
+		run_scheduled_recurrent_functions();
+	}
+}
+
+/// Setups display ticker to recur with specified interval.
+void setupDisplayTicker(uint16_t myInterval)
+{
+	schedule_recurrent_function_us([=]() {
+		if (myInterval != interval) {
+			Serial.printf_P(PSTR("Stopping ticking with interval %uus\n"), myInterval);
+			return false; // stops recurring
+		}
+		displayTick();
+		return true; // continues recurring
+	}, myInterval);
+	Serial.printf_P(PSTR("Starting ticking with interval %uus\n"), myInterval);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -177,13 +155,13 @@ void draw2DGradient()
 {
 	unsigned int t = micros() >> 10 & 0xFFF;
 	for (unsigned int x = 0; x < 64; x++) {
-		unsigned long now = micros();
 		float hue = static_cast<float>(((x << 6) + t) & 0xFFF) / 4096;
 		for (unsigned int y = 0; y < 32; y++) {
+			unsigned long now = micros();
 			float saturation = static_cast<float>(y) / 32;
 			display.drawPixel(x, y, to565(HSL{hue, saturation, 0.5}));
+			pessimisticYieldForDisplayTick(micros() - now + 100);
 		}
-		pessimisticYieldForDisplayTick(micros() - now + 100);
 	}
 }
 
@@ -260,7 +238,7 @@ void setup()
 	display.begin();
 	// display.fillScreen(0); // black
 	examples::drawSingleColorGradients(0);
-	setupDisplayTicker(mode, interval, showTime);
+	setupDisplayTicker(interval);
 #ifdef DEBUG_DISPLAY_SHOW_TIME
 	display.resetDebugCounters();
 #endif
@@ -346,26 +324,27 @@ void loop()
 				if (*p) {
 					if (line[0] == 'i') {
 						interval = strtoul(p + 1, nullptr, 10);
-						intervalMicroseconds = interval * 1000;
 #ifdef DEBUG_DISPLAY_SHOW_TIME
-						displayLateTickCutoff = interval * 1024;
+						displayLateTickCutoff = interval + 200;
 #endif
-						setupDisplayTicker(mode, interval, showTime);
+						setupDisplayTicker(interval);
 					}
 					else if (line[0] == 't') {
 						showTime = strtoul(p + 1, nullptr, 10);
-						setupDisplayTicker(mode, interval, showTime);
+						setupDisplayTicker(interval);
 					}
 					else if (line[0] == 'm') {
 						mode = static_cast<Mode>(strtoul(p + 1, nullptr, 10));
-						setupDisplayTicker(mode, interval, showTime);
+						setupDisplayTicker(interval);
 					}
 					else if (line[0] == 'e') {
 						example = strtoul(p + 1, nullptr, 10);
 					}
 #ifdef DEBUG_DISPLAY_SHOW_TIME
 					else if (line[0] == 'l') {
-						displayLateTickCutoff = strtoul(p + 1, nullptr, 10);
+						const int diff = strtoul(p + 1, nullptr, 10);
+						displayEarlyTickCutoff = std::min(interval - diff, 0);
+						displayLateTickCutoff = interval + diff;
 					}
 #endif
 					else {
@@ -373,18 +352,24 @@ void loop()
 					}
 				}
 				else /* not assignment */ {
-					if (line[0] == 'd' && line[1] == 'c') {
+					if (line[0] == 'c' && line[1] == 'l') {
+						Serial.println(F("\033[2J\nHello!"));
+					}
+					else if (line[0] == 'd' && line[1] == 'c') {
 #ifdef DEBUG_DISPLAY_SHOW_TIME
 						display.printDebugCounters();
 						display.resetDebugCounters();
 
 						Serial.printf(
+							"displayEarlyTickCounter=%lu\n"
 							"displayLateTickCounter=%lu\n"
 							"displayTickCounter=%lu\n"
 							"displayTickTimeSum=%lu\n",
+							displayEarlyTickCounter,
 							displayLateTickCounter,
 							displayTickCounter, 
 							displayTickTimeSum);
+						displayEarlyTickCounter = 0;
 						displayLateTickCounter = 0;
 						displayTickCounter = 0;
 						displayTickTimeSum = 0;
@@ -507,7 +492,7 @@ void loop()
 		now = micros();
 	}
 
-	pessimisticYieldForDisplayTick(400);
+	pessimisticYieldForDisplayTick(333);
 
 	display.setTextColor(0);
 	display.setCursor(1, 1);
@@ -523,12 +508,13 @@ void loop()
 	}
 
 	// pessimisticYieldForDisplayTick(500);
-	// yield();
+	yield();
 
 	if (justUpdatedThermometer) {
 		now = micros() - now;
 		Serial.print(F("\tafter yield: ")); Serial.println(now);
 	}
 
-	Serial.println('d');
+	Serial.print('d');
+	Serial.print(' ');
 }
