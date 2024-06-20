@@ -26,14 +26,11 @@
 ### To-do
 
 1. Try out `yield`ing even more, resolve late tick situations to reduce blinking even more.
-	+ Maybe the 100us diff (before `yield()` -> (late) tick) is because of context switching?
-	+ Try figure out how `yield` works at all in the ESP8266, see sources/assembly
-	+ Try using `esp_yield_within_cont` instead `yield`?
-2. Try using `schedule_recurrent_function_us` instead the `Ticker`?
-3. Maybe separate out the tick, and call it manually too?
-4. Try `((r >> i) & 1)` instead `(r & (1 << i))`
-5. Add networking code, web server and NTP, digital clock
-6. Add file system, include analog clock BMP and use it
+	+ Instead of waiting, maybe do display tick with scaled down show time, keeping the same ratio?
+	+ ...?
+2. Try `((r >> i) & 1)` instead `(r & (1 << i))`
+3. Add networking code, web server and NTP, digital clock
+4. Add file system, include analog clock BMP and use it
 
 + Write up proper README.
 + Migrate old project version code here, with new library.

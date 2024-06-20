@@ -1,6 +1,5 @@
 #include <OneWire.h>
 #include <MyPxMatrix.hpp>
-#include <Schedule.h>
 #include <colors.hpp>
 #include <utils.hpp> // saturatedSubtract
 
@@ -45,11 +44,19 @@ enum class Mode : uint8_t
 	Everything,
 };
 
+/// Selects which example is being drawn to the display.
 uint8_t example = 1;
+/// Mode for the display tick.
 Mode mode = Mode::SingleColorDepth;
-uint16_t interval = 4000; // us
-uint16_t showTime = 100; // us
-unsigned long lastTick;
+/// Interval between display ticks, in microseconds.
+uint16_t interval = 4000;
+/// Display show time, in microseconds. See `displayStep` for details.
+uint16_t showTime = 100;
+/// Prevents re-entry (from yield) into `displayTick`. 
+/// Starts as true to hold the first tick until display is initialized.
+bool insideDisplayTick = true;
+/// Timestamp of last tick, in local microseconds (`micros()`).
+unsigned long lastTick = 0;
 #ifdef DEBUG_DISPLAY_SHOW_TIME
 unsigned long displayEarlyTickCounter = 0;
 unsigned long displayEarlyTickCutoff = interval - 200;
@@ -61,6 +68,9 @@ unsigned long displayTickTimeSum = 0;
 
 void displayTick()
 {
+	if (insideDisplayTick)
+		return;
+	insideDisplayTick = true;
 #ifdef DEBUG_DISPLAY_SHOW_TIME
 	unsigned long now = micros();
 	unsigned long diff = now - lastTick;
@@ -68,6 +78,7 @@ void displayTick()
 	if (diff < displayEarlyTickCutoff) {
 		displayEarlyTickCounter++;
 		Serial.printf("EARLY");
+		// panic();
 	}
 	if (diff > displayLateTickCutoff) {
 		displayLateTickCounter++;
@@ -93,36 +104,33 @@ void displayTick()
 	displayTickTimeSum += micros() - now;
 	displayTickCounter++;
 #endif
+	insideDisplayTick = false;
 }
 
-void pessimisticYieldForDisplayTick(unsigned long maxTimeToWait)
+void maybeDisplayTick(unsigned long maxTimeToWait)
 {
-	while (true) {
-		const unsigned long timeSinceLastTick = micros() - lastTick;
-		const auto timeUntilNextTick = saturatedSubtract<unsigned long>(interval, timeSinceLastTick);
-		// FIXME: if maxTimeToWait is higher than tick interval, there can be infinite loop
-		// Serial.printf("<%lu>", timeSinceLastTick);
-		if (maxTimeToWait < timeUntilNextTick)
-			break;
-		// Serial.print('y');
-		Serial.printf("<%lu>y",timeSinceLastTick);
-		// displayTick();
-		run_scheduled_recurrent_functions();
-	}
+	if (insideDisplayTick)
+		return;
+	const unsigned long timeSinceLastTick = micros() - lastTick;
+	const auto timeUntilNextTick = saturatedSubtract<unsigned long>(interval, timeSinceLastTick);
+	if (maxTimeToWait < timeUntilNextTick)
+		return;
+	delayMicroseconds(timeUntilNextTick);
+	displayTick();
+	Serial.printf("y<%lu>", timeSinceLastTick);
 }
 
-/// Setups display ticker to recur with specified interval.
-void setupDisplayTicker(uint16_t myInterval)
+extern "C" void __yield(); // default yield implementation
+
+void yield()
 {
-	schedule_recurrent_function_us([=]() {
-		if (myInterval != interval) {
-			Serial.printf_P(PSTR("Stopping ticking with interval %uus\n"), myInterval);
-			return false; // stops recurring
-		}
-		displayTick();
-		return true; // continues recurring
-	}, myInterval);
-	Serial.printf_P(PSTR("Starting ticking with interval %uus\n"), myInterval);
+	maybeDisplayTick(30);
+	__yield();
+}
+
+void setupDisplayTicker()
+{
+	insideDisplayTick = false;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -137,7 +145,7 @@ void drawHorizontalGradient()
 		unsigned long now = micros();
 		float hue = static_cast<float>(x) / display.width();
 		display.drawFastVLine(x, 0, display.height(), to565(HSL{hue, 1, 0.5}));
-		pessimisticYieldForDisplayTick(micros() - now + 100);
+		maybeDisplayTick(micros() - now + 100);
 	}
 }
 
@@ -147,7 +155,7 @@ void drawVerticalGradient()
 		unsigned long now = micros();
 		float hue = static_cast<float>(y) / display.height();
 		display.drawFastHLine(0, y, display.width(), to565(HSL{hue, 1, 0.5}));
-		pessimisticYieldForDisplayTick(micros() - now + 100);
+		maybeDisplayTick(micros() - now + 100);
 	}
 }
 
@@ -160,7 +168,7 @@ void draw2DGradient()
 			unsigned long now = micros();
 			float saturation = static_cast<float>(y) / 32;
 			display.drawPixel(x, y, to565(HSL{hue, saturation, 0.5}));
-			pessimisticYieldForDisplayTick(micros() - now + 100);
+			maybeDisplayTick(micros() - now + 100);
 		}
 	}
 }
@@ -238,10 +246,11 @@ void setup()
 	display.begin();
 	// display.fillScreen(0); // black
 	examples::drawSingleColorGradients(0);
-	setupDisplayTicker(interval);
+	setupDisplayTicker();
 #ifdef DEBUG_DISPLAY_SHOW_TIME
 	display.resetDebugCounters();
 #endif
+	displayTick();
 
 	// Initialize the thermometer
 	{
@@ -327,15 +336,12 @@ void loop()
 #ifdef DEBUG_DISPLAY_SHOW_TIME
 						displayLateTickCutoff = interval + 200;
 #endif
-						setupDisplayTicker(interval);
 					}
 					else if (line[0] == 't') {
 						showTime = strtoul(p + 1, nullptr, 10);
-						setupDisplayTicker(interval);
 					}
 					else if (line[0] == 'm') {
 						mode = static_cast<Mode>(strtoul(p + 1, nullptr, 10));
-						setupDisplayTicker(interval);
 					}
 					else if (line[0] == 'e') {
 						example = strtoul(p + 1, nullptr, 10);
@@ -398,6 +404,11 @@ void loop()
 	if (oneWire.read_bit()) {
 		justUpdatedThermometer = true;
 
+		// Try force display tick right before long operation
+		maybeDisplayTick(7000);
+
+		now = micros();
+
 		// Read temperature fast (2 first bytes of scratch pad)
 		// This will skip CRC.
 		oneWire.reset();
@@ -408,9 +419,18 @@ void loop()
 		oneWire.write(0xBE);
 		uint8_t lsb = oneWire.read();
 		uint8_t msb = oneWire.read();
-		int16_t raw = (msb << 8) | lsb;
+
+		now = micros() - now;
+		Serial.print(F("temperature read: ")); Serial.print(now);
+		now = micros();
+
+		// Try force display tick before converting & requesting next
+		maybeDisplayTick(2200);
+
+		now = micros();
 
 		// Convert
+		int16_t raw = (msb << 8) | lsb;
 		bool sign = msb >> 7;
 		raw = sign ? -raw : raw;
 		static const char digitAfterCommaLookup[16] = {
@@ -442,16 +462,6 @@ void loop()
 		*p++ = 'C';
 		*p = 0;
 
-		now = micros() - now;
-		Serial.print(F("got temperature: ")); Serial.print(now);
-		now = micros();
-
-		yield();
-
-		now = micros() - now;
-		Serial.print(F("\tafter 1st yield: ")); Serial.print(now);
-		now = micros();
-
 		// Start conversion
 		oneWire.reset();
 		if (singleOneWireDevice)
@@ -461,13 +471,7 @@ void loop()
 		oneWire.write(0x44);
 
 		now = micros() - now;
-		Serial.print(F("\trequestTemperatures: ")); Serial.print(now);
-		now = micros();
-
-		yield();
-
-		now = micros() - now;
-		Serial.print(F("\tafter 2nd yield: ")); Serial.print(now);
+		Serial.print(F("temperature requested: ")); Serial.print(now);
 		now = micros();
 	}
 
@@ -492,7 +496,7 @@ void loop()
 		now = micros();
 	}
 
-	pessimisticYieldForDisplayTick(333);
+	maybeDisplayTick(333);
 
 	display.setTextColor(0);
 	display.setCursor(1, 1);
@@ -507,7 +511,7 @@ void loop()
 		now = micros();
 	}
 
-	// pessimisticYieldForDisplayTick(500);
+	// maybeDisplayTick(500);
 	yield();
 
 	if (justUpdatedThermometer) {
