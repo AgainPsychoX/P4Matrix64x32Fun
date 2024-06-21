@@ -1,8 +1,15 @@
 {
 	"cSpell.words": [
 		"Adafruit",
+		"disasm",
 		"GPOC",
-		"IRAM"
+		"IRAM",
+		"LINKFLAGS",
+		"OBJCOPY",
+		"objdump",
+		"PIOENV",
+		"projenv",
+		"xtensa"
 	],
 	"files.associations": {
 		"*.log": "vt100",

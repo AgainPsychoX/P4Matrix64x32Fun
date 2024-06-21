@@ -18,5 +18,8 @@ dependencies.lock
 # Logs
 *.log
 
+# Disassebly outputs
+*.disasm
+
 # Private stuff
 private

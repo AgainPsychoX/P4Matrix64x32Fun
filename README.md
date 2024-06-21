@@ -22,6 +22,8 @@
 		+ Source code of Arduino core for ESP8266: `core_esp8266_main.cpp`, `ets_sys.h`, `cont.h`, `cont.S`, `cont_util.cpp`, `Schedule.cpp`, `Schedule.h`, ...
 		+ Articles at https://sub.nanona.fi/esp8266/ 
 		+ ESP8266 ROM (kernel code parts) dump: https://df.lth.se/~kongo/esp8266.bin/iram0.txt 
++ Decompiling ESP8266 code
+	+ Bugged? See https://stackoverflow.com/questions/72064789/curly-brackets-in-xtensa-dissasembly and https://www.esp8266.com/viewtopic.php?f=9&t=3105&p=18572&hilit=section+that+denotes#p18572 and https://sourceware.org/pipermail/binutils-cvs/2018-June/048351.html 
 
 ### To-do
 
@@ -31,6 +33,7 @@
 2. Try `((r >> i) & 1)` instead `(r & (1 << i))`
 3. Add networking code, web server and NTP, digital clock
 4. Add file system, include analog clock BMP and use it
+5. Colors scaling using precalculated table?
 
 + Write up proper README.
 + Migrate old project version code here, with new library.
