@@ -57,13 +57,15 @@ uint16_t showTime = 100;
 bool insideDisplayTick = true;
 /// Timestamp of last tick, in local microseconds (`micros()`).
 unsigned long lastTick = 0;
-#ifdef DEBUG_DISPLAY_SHOW_TIME
-unsigned long displayEarlyTickCounter = 0;
+#ifdef DISPLAY_DEBUG
+unsigned long displayEarlyTickCounter;
 unsigned long displayEarlyTickCutoff = interval - 200;
-unsigned long displayLateTickCounter = 0;
+unsigned long displayLateTickCounter;
 unsigned long displayLateTickCutoff = interval + 200;
-unsigned long displayTickCounter = 0;
-unsigned long displayTickTimeSum = 0;
+unsigned long displayTickCounter;
+unsigned long displayTickTimeSum;
+unsigned long drawCounter;
+unsigned long drawTimeSum;
 #endif
 
 void displayTick()
@@ -71,18 +73,23 @@ void displayTick()
 	if (insideDisplayTick)
 		return;
 	insideDisplayTick = true;
-#ifdef DEBUG_DISPLAY_SHOW_TIME
+#ifdef DISPLAY_DEBUG
 	unsigned long now = micros();
 	unsigned long diff = now - lastTick;
+#ifdef DISPLAY_DEBUG_VERBOSE
 	Serial.printf("t[%lu]", now - lastTick);
+#endif
 	if (diff < displayEarlyTickCutoff) {
 		displayEarlyTickCounter++;
+#ifdef DISPLAY_DEBUG_VERBOSE
 		Serial.printf("EARLY");
-		// panic();
+#endif
 	}
 	if (diff > displayLateTickCutoff) {
 		displayLateTickCounter++;
+#ifdef DISPLAY_DEBUG_VERBOSE
 		Serial.printf("LATE");
+#endif
 	}
 #endif
 	lastTick = now;
@@ -100,7 +107,7 @@ void displayTick()
 			// No ticking, no display
 			break;
 	}
-#ifdef DEBUG_DISPLAY_SHOW_TIME
+#ifdef DISPLAY_DEBUG
 	displayTickTimeSum += micros() - now;
 	displayTickCounter++;
 #endif
@@ -117,7 +124,9 @@ void maybeDisplayTick(unsigned long maxTimeToWait)
 		return;
 	delayMicroseconds(timeUntilNextTick);
 	displayTick();
+#ifdef DISPLAY_DEBUG_VERBOSE
 	Serial.printf("y<%lu>", timeSinceLastTick);
+#endif
 }
 
 extern "C" void __yield(); // default yield implementation
@@ -247,7 +256,7 @@ void setup()
 	// display.fillScreen(0); // black
 	examples::drawSingleColorGradients(0);
 	setupDisplayTicker();
-#ifdef DEBUG_DISPLAY_SHOW_TIME
+#ifdef DISPLAY_DEBUG
 	display.resetDebugCounters();
 #endif
 	displayTick();
@@ -333,7 +342,7 @@ void loop()
 				if (*p) {
 					if (line[0] == 'i') {
 						interval = strtoul(p + 1, nullptr, 10);
-#ifdef DEBUG_DISPLAY_SHOW_TIME
+#ifdef DISPLAY_DEBUG
 						displayLateTickCutoff = interval + 200;
 #endif
 					}
@@ -346,7 +355,7 @@ void loop()
 					else if (line[0] == 'e') {
 						example = strtoul(p + 1, nullptr, 10);
 					}
-#ifdef DEBUG_DISPLAY_SHOW_TIME
+#ifdef DISPLAY_DEBUG
 					else if (line[0] == 'l') {
 						const int diff = strtoul(p + 1, nullptr, 10);
 						displayEarlyTickCutoff = std::min(interval - diff, 0);
@@ -362,7 +371,7 @@ void loop()
 						Serial.println(F("\033[2J\nHello!"));
 					}
 					else if (line[0] == 'd' && line[1] == 'c') {
-#ifdef DEBUG_DISPLAY_SHOW_TIME
+#ifdef DISPLAY_DEBUG
 						display.printDebugCounters();
 						display.resetDebugCounters();
 
@@ -370,15 +379,21 @@ void loop()
 							"displayEarlyTickCounter=%lu\n"
 							"displayLateTickCounter=%lu\n"
 							"displayTickCounter=%lu\n"
-							"displayTickTimeSum=%lu\n",
+							"displayTickTimeSum=%lu\n"
+							"drawCounter=%lu\n"
+							"drawTimeSum=%lu\n",
 							displayEarlyTickCounter,
 							displayLateTickCounter,
 							displayTickCounter, 
-							displayTickTimeSum);
+							displayTickTimeSum,
+							drawCounter,
+							drawTimeSum);
 						displayEarlyTickCounter = 0;
 						displayLateTickCounter = 0;
 						displayTickCounter = 0;
 						displayTickTimeSum = 0;
+						drawCounter = 0;
+						drawTimeSum = 0;
 #endif
 					}
 					else {
@@ -471,7 +486,7 @@ void loop()
 		oneWire.write(0x44);
 
 		now = micros() - now;
-		Serial.print(F("temperature requested: ")); Serial.print(now);
+		Serial.print(F("\ttemperature requested: ")); Serial.print(now);
 		now = micros();
 	}
 
@@ -489,6 +504,11 @@ void loop()
 		case 9: examples::drawOrthogonalLines(); break;
 		case 10: examples::drawFilledRectangles(); break;
 	}
+
+#ifdef DISPLAY_DEBUG
+	drawTimeSum += micros() - now;
+	drawCounter++;
+#endif
 
 	if (justUpdatedThermometer) {
 		now = micros() - now;
@@ -519,6 +539,8 @@ void loop()
 		Serial.print(F("\tafter yield: ")); Serial.println(now);
 	}
 
+#ifdef DISPLAY_DEBUG_VERBOSE
 	Serial.print('d');
 	Serial.print(' ');
+#endif
 }

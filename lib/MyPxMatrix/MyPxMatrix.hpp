@@ -425,7 +425,7 @@ public:
 		enableOutput();
 #endif
 
-#ifdef DEBUG_DISPLAY_SHOW_TIME
+#ifdef DISPLAY_DEBUG
 		unsigned long start = micros();
 #endif
 
@@ -451,7 +451,7 @@ public:
 			displayNextBufferPosition += sendBufferSize;
 		}
 
-#ifdef DEBUG_DISPLAY_SHOW_TIME
+#ifdef DISPLAY_DEBUG
 		// TODO: count cycles instead microseconds & try balance `if`s above
 		if (collectDebugCounters) {
 			unsigned long now = micros() - start;
@@ -459,7 +459,7 @@ public:
 			showTimeByColorDepth[displayColorDepth] += now;
 			showTimeCounter++;
 		}
-#endif // DEBUG_DISPLAY_SHOW_TIME
+#endif // DISPLAY_DEBUG
 
 		enableOutput();
 
@@ -493,7 +493,7 @@ public:
 		} while (displayColorDepth > 0);
 	}
 
-#ifdef DEBUG_DISPLAY_SHOW_TIME
+#ifdef DISPLAY_DEBUG
 	volatile bool collectDebugCounters =  false;
 	size_t showTimeCounter;
 	unsigned long showTimeByRowPattern[constRowPattern];
@@ -526,7 +526,7 @@ public:
 		}
 		collectDebugCounters = true;
 	}
-#endif // DEBUG_DISPLAY_SHOW_TIME
+#endif // DISPLAY_DEBUG
 
 private:
 #ifdef ESP8266
