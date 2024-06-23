@@ -1,4 +1,42 @@
 
+## Hardware
+
+### Microcontroller pins usage
+
+| Pin | GPIO | Notes                                                          |
+|-----|------|----------------------------------------------------------------|
+|  A0 |      | Analog to Digital Converter; input only; Unused for now        |
+|   G |      | Ground, but some docs suggest it's related to ADC as well...   |
+|  VU |      | Voltage from USB, most likely around 5V                        |
+|  S3 |   10 | PWM-able;                                                      |
+|  S2 |    9 | PWM-able;                                                      |
+|  S1 |    8 | MOSI                                                           |
+|  SC |   11 | CS0                                                            |
+|  S0 |    7 | MISO                                                           |
+|  SK |    6 | SCLK                                                           |
+|   G |      | Ground                                                         |
+| ... |      |                                                                |
+|  D0 |   16 | Accessed by special register; Wake signal; Used for display latch. |
+|  D1 |    5 | PWM-able; Used for display row selection (Pin A).               |
+|  D2 |    4 | PWM-able; Used for display row selection (Pin B).               |
+|  D3 |    0 | PWM-able; High for run (default), low for flash mode; Used for OneWire for DS18B20 thermometer. |
+|  D4 |    2 | PWM-able; Built-in LED, driven by low (pulled-up by default); Used for display output enable. |
+|  3V |      | 3V3, from voltage stabilizer                                   |
+|   G |      | Ground                                                         |
+|  D5 |   14 | PWM-able; HSPI SCK; Used to push pixels data to the display.   |
+|  D6 |   12 | PWM-able; HSPI MISO; Used for display row selection (Pin D); Maybe unnecessary actually. |
+|  D7 |   13 | PWM-able; HSPI MOSI; Used to push pixels data to the display.  |
+|  D8 |   15 | PWM-able; HSPI CS; Pulled-down by default, must be low on start; Used for display row selection (Pin C). |
+|  RX |    3 | PWM-able; Used for UART0 connection, default via USB           |
+|  TX |    1 | PWM-able; Used for UART0 connection, default via USB           |
+|   G |      | Ground                                                         |
+|  3V |      | 3V3, from voltage stabilizer                                   |
+|     |      |                                                                |
+
+
+
+
+
 ## Notes
 
 + There is [nice RGB565 color picker](https://rgbcolorpicker.com/565) online.
@@ -25,6 +63,8 @@
 + Decompiling ESP8266 code
 	+ Bugged? See https://stackoverflow.com/questions/72064789/curly-brackets-in-xtensa-dissasembly and https://www.esp8266.com/viewtopic.php?f=9&t=3105&p=18572&hilit=section+that+denotes#p18572 and https://sourceware.org/pipermail/binutils-cvs/2018-June/048351.html 
 
+
+
 ### To-do
 
 1. Try out `yield`ing even more, resolve late tick situations to reduce blinking even more.
@@ -37,6 +77,6 @@
 
 + Write up proper README.
 + Migrate old project version code here, with new library.
-+ Try `yield` more, and/or try avoid critical/no interrupts sections.
++ Rewrite some parts of OneWire library to avoid wasting time, like `delayMicroseconds` in single `read_bit`.
 + PlatformIO `monitor_filter = send_on_enter` is so useful, but annoying, because of lack of backspace (and delete) support.
 + Figure out why `_BSD_SOURCE` is set as defined. Forgot to document that anywhere...
